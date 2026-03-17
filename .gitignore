@@ -1,0 +1,21 @@
+# Generated experiment outputs
+bags/
+data/
+results/
+rellis_like_dataset/
+
+# Runtime-generated model variants
+models/husky/model_red_tag.sdf
+models/husky/model_blue_tag.sdf
+
+# Python bytecode
+*.pyc
+**/__pycache__/
+.ipynb_checkpoints/
+
+# OMNeT++ build outputs
+onmetpp/.cmdenv-log
+onmetpp/onmetpp
+onmetpp/ros_network_sim
+onmetpp/out/
+onmetpp/results/
