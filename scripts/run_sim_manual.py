@@ -1,3 +1,9 @@
+"""Run the manual Husky/UAV simulation used for baseline checks.
+
+The Husky follows a scripted motion plan while the UAV tracks it overhead.
+This gives a predictable reference run before switching to learned controllers.
+"""
+
 import subprocess
 import time
 import os
@@ -53,6 +59,8 @@ def wrap_angle(angle):
 
 
 class UavFollower(Node):
+    """Simple in-file UAV follower used by the manual simulation runner."""
+
     def __init__(self):
         super().__init__("uav_follower")
         self.husky_pose = None

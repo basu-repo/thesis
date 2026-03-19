@@ -1,3 +1,10 @@
+"""Estimate hazard hints from the UAV point cloud.
+
+The estimator projects aerial point-cloud obstacles into the Husky's forward
+corridor and publishes a compact left/center/right blocking summary that can be
+consumed directly or passed through OMNeT++.
+"""
+
 import json
 import math
 
@@ -16,6 +23,8 @@ def quaternion_to_yaw(x, y, z, w):
 
 
 class UavHazardEstimator(Node):
+    """Summarize aerial obstacle observations into a simple navigation hint."""
+
     def __init__(
         self,
         node_name: str = "uav_hazard_estimator",

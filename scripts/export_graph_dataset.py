@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""Export the latest rosbag into graph frames for GNN training.
+
+Each output frame stores synchronized multi-agent state, goal metadata, command
+history, and pairwise spatial edges so the graph model can learn from complete
+scene context rather than ego motion alone.
+"""
 
 import json
 import sqlite3
@@ -24,6 +30,8 @@ TOPICS = {
     "uav1_goal": "/episode/uav1/goal",
 }
 
+
+# Bag helpers and message conversion -----------------------------------------
 
 def latest_bag(path: Path) -> Path:
     bags = sorted(path.glob("run_*"))
@@ -88,6 +96,8 @@ def edge(src: str, dst: str, nodes: dict):
 
 
 def main():
+    """Read the latest bag and write graph frames plus a lightweight schema."""
+
     bag_path = latest_bag(BAGS_DIR)
     db3_path = bag_db3_path(bag_path)
     print("Using bag:", bag_path)

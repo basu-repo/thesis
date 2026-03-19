@@ -23,8 +23,8 @@
   "train": 22563,
   "val": 4835,
   "test": 4836,
-  "ADE": 0.3642473816871643,
-  "FDE": 0.9284042119979858,
-  "RMSE": 0.41545188426971436,
+  "ADE": 0.37276691198349,
+  "FDE": 0.9319756627082825,
+  "RMSE": 0.4277556538581848,
   "model_path": "/home/basudeo/Documents/Thesis/models/kitti_75pct_cnn_lstm_done.pt"
 }

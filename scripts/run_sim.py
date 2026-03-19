@@ -1,3 +1,10 @@
+"""Launch the manual structured-motion simulation scenario.
+
+This script brings up Gazebo, spawns the terrain and vehicles, bridges Gazebo
+topics into ROS 2, and runs a simple time-based Husky motion script for data
+collection or quick environment sanity checks.
+"""
+
 import subprocess
 import time
 import os
@@ -26,6 +33,8 @@ def run_bg(cmd):
 # ---------------- DRIVER ----------------
 
 class ManualStructuredDriver(Node):
+    """Drive the Husky through a fixed sequence of motion primitives."""
+
     def __init__(self):
         super().__init__('manual_structured_driver')
 

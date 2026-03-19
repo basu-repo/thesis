@@ -1,3 +1,10 @@
+"""Live CNN-LSTM Husky controller.
+
+The CNN-LSTM predicts short-horizon future waypoints from recent ego motion.
+This node blends those predicted waypoints with the final goal direction and
+publishes ``cmd_vel`` commands to drive the robot toward that goal.
+"""
+
 import json
 import math
 import time
@@ -26,6 +33,8 @@ def wrap_angle(angle):
 
 
 class CNNLSTM(nn.Module):
+    """Convolutional-temporal predictor used for the live CNN baseline."""
+
     def __init__(
         self,
         past_len=10,
@@ -66,6 +75,8 @@ class CNNLSTM(nn.Module):
 
 
 class ModelHuskyDriver(Node):
+    """Convert ego-motion predictions into live Husky velocity commands."""
+
     def __init__(
         self,
         node_name: str,
@@ -75,6 +86,7 @@ class ModelHuskyDriver(Node):
         pointcloud_topic: str | None,
         hazard_topic: str | None,
         summary_path: str | Path,
+        goal_xyz: tuple[float, float, float] | None = None,
         target_bias_x: float = 0.0,
         target_bias_y: float = 0.0,
         bootstrap_seconds: float = 3.0,
@@ -89,6 +101,8 @@ class ModelHuskyDriver(Node):
         max_angular_speed: float = 1.2,
         heading_deadband: float = 0.08,
         waypoint_reached_dist: float = 0.2,
+        goal_tolerance: float = 1.5,
+        goal_blend: float = 0.75,
         obstacle_stop_distance: float = 1.8,
         obstacle_turn_speed: float = 1.35,
         obstacle_turn_speed_close: float = 1.8,
@@ -122,6 +136,7 @@ class ModelHuskyDriver(Node):
         self.scan_topic = scan_topic
         self.pointcloud_topic = pointcloud_topic
         self.hazard_topic = hazard_topic
+        self.goal_xyz = goal_xyz
         self.target_bias_x = target_bias_x
         self.target_bias_y = target_bias_y
         self.bootstrap_seconds = bootstrap_seconds
@@ -136,6 +151,8 @@ class ModelHuskyDriver(Node):
         self.max_angular_speed = max_angular_speed
         self.heading_deadband = heading_deadband
         self.waypoint_reached_dist = waypoint_reached_dist
+        self.goal_tolerance = goal_tolerance
+        self.goal_blend = goal_blend
         self.obstacle_stop_distance = obstacle_stop_distance
         self.obstacle_turn_speed = obstacle_turn_speed
         self.obstacle_turn_speed_close = obstacle_turn_speed_close
@@ -159,6 +176,7 @@ class ModelHuskyDriver(Node):
         self.current_pose = None
         self.current_yaw = 0.0
         self.predicted_path = None
+        self.arrived = False
         self.start_time = time.monotonic()
         self.timer = self.create_timer(self.control_period, self.step)
 
@@ -184,9 +202,13 @@ class ModelHuskyDriver(Node):
         self.pub.publish(msg)
 
     def bootstrap_drive(self):
+        """Collect enough motion history before the model is trusted."""
+
         self.publish_cmd(self.bootstrap_linear_speed, self.bootstrap_angular_speed)
 
     def predict_path(self):
+        """Predict future planar waypoints in the current odometry frame."""
+
         xy = torch.tensor(list(self.positions), dtype=torch.float32).unsqueeze(0)
         origin = xy[:, -1:, :].clone()
         xy_rel = xy - origin
@@ -196,8 +218,31 @@ class ModelHuskyDriver(Node):
         self.predicted_path = pred_abs
         return pred_abs
 
+    def _current_goal(self):
+        if self.goal_xyz is None:
+            return None
+        return (float(self.goal_xyz[0]), float(self.goal_xyz[1]))
+
+    def _distance_to_goal(self):
+        goal = self._current_goal()
+        if goal is None or self.current_pose is None:
+            return None
+        dx = goal[0] - self.current_pose.position.x
+        dy = goal[1] - self.current_pose.position.y
+        return math.hypot(dx, dy)
+
     def step(self):
         if self.current_pose is None:
+            return
+
+        if self.arrived:
+            self.publish_cmd(0.0, 0.0)
+            return
+
+        remaining = self._distance_to_goal()
+        if remaining is not None and remaining <= self.goal_tolerance:
+            self.arrived = True
+            self.publish_cmd(0.0, 0.0)
             return
 
         if time.monotonic() - self.start_time < self.bootstrap_seconds or len(self.positions) < self.past_len:
@@ -209,6 +254,10 @@ class ModelHuskyDriver(Node):
         target_x, target_y = pred_abs[target_idx]
         target_x += self.target_bias_x
         target_y += self.target_bias_y
+        goal = self._current_goal()
+        if goal is not None:
+            target_x = (1.0 - self.goal_blend) * target_x + self.goal_blend * goal[0]
+            target_y = (1.0 - self.goal_blend) * target_y + self.goal_blend * goal[1]
 
         dx = target_x - self.current_pose.position.x
         dy = target_y - self.current_pose.position.y
@@ -218,6 +267,9 @@ class ModelHuskyDriver(Node):
             target_x, target_y = pred_abs[-1]
             target_x += self.target_bias_x
             target_y += self.target_bias_y
+            if goal is not None:
+                target_x = (1.0 - self.goal_blend) * target_x + self.goal_blend * goal[0]
+                target_y = (1.0 - self.goal_blend) * target_y + self.goal_blend * goal[1]
             dx = target_x - self.current_pose.position.x
             dy = target_y - self.current_pose.position.y
             distance = math.hypot(dx, dy)

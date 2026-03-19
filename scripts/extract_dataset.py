@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""Extract a RELLIS-like single-robot dataset from the latest rosbag.
+
+The exporter aligns Husky odometry, command, and planar laser frames into a
+table that can be reused by the CNN-LSTM pipeline. UAV point clouds are saved
+when present so the same run can support aerial hazard analysis as well.
+"""
 # Extracts a Husky trajectory dataset from the latest rosbag.
 # Uses Husky LaserScan timestamps as frame anchors and aligns odometry/cmd_vel.
 # Optionally saves UAV lidar point clouds if they exist in the bag.
@@ -33,6 +39,8 @@ OUT_ROOT = Path.home() / "Documents/Thesis/rellis_like_dataset"
 
 SEQ_NAME = "00000"
 
+
+# Bag selection and message decoding -----------------------------------------
 
 def latest_bag(path: Path) -> Path:
     bags = sorted(path.glob("run_*"))
@@ -87,6 +95,8 @@ def save_laserscan(msg, out_path: Path):
 
 
 def main():
+    """Export scans, optional UAV clouds, and maneuver targets from one bag."""
+
     bag_path = latest_bag(BAGS_DIR)
     print("Using bag:", bag_path)
     db3_path = bag_db3_path(bag_path)

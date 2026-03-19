@@ -1,3 +1,9 @@
+"""UAV follower controller used during live simulation.
+
+The UAV tracks the Husky with a configurable offset and altitude so it can act
+as an aerial observer while the ground vehicles execute their mission.
+"""
+
 import math
 import subprocess
 
@@ -20,6 +26,8 @@ def wrap_angle(angle):
 
 
 class UavFollower(Node):
+    """Track the Husky smoothly by publishing body-frame UAV velocity commands."""
+
     def __init__(
         self,
         node_name: str = "uav_follower",

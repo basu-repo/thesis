@@ -1,0 +1,25 @@
+{
+  "model": "cnn_gnn_lstm",
+  "samples": 13480,
+  "train": 9436,
+  "val": 2022,
+  "test": 2022,
+  "comparison": {
+    "constant_velocity": {
+      "ADE": 0.004881541710346937,
+      "FDE": 0.012086867354810238,
+      "RMSE": 0.015232838690280914
+    },
+    "cnn_gnn_lstm": {
+      "ADE": 0.008119557052850723,
+      "FDE": 0.015822038054466248,
+      "RMSE": 0.014050591737031937
+    }
+  },
+  "ADE": 0.008119557052850723,
+  "FDE": 0.015822038054466248,
+  "RMSE": 0.014050591737031937,
+  "model_path": "/home/basudeo/Documents/Thesis/models/cnn_gnn_lstm_graph_done_from_notebook.pt",
+  "past_len": 10,
+  "future_len": 20
+}

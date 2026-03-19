@@ -1,3 +1,9 @@
+"""Bridge UAV hazard hints through OMNeT++ using UDP.
+
+The bridge forwards locally estimated hazard messages into the network
+simulator and republishes the delayed/degraded result back into ROS 2.
+"""
+
 import socket
 import threading
 
@@ -6,6 +12,8 @@ from std_msgs.msg import String
 
 
 class OmnetHazardBridge(Node):
+    """ROS 2 <-> UDP bridge for hazard messages passed through OMNeT++."""
+
     def __init__(
         self,
         node_name: str = "omnet_hazard_bridge",

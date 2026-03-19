@@ -1,0 +1,27 @@
+{
+  "model": "gnn_lstm",
+  "graph_root": "/home/basudeo/Documents/Thesis/graph_dataset",
+  "runs": 1,
+  "samples": 13480,
+  "train": 9436,
+  "val": 2022,
+  "test": 2022,
+  "comparison": {
+    "constant_velocity": {
+      "ADE": 0.004881541710346937,
+      "FDE": 0.012086867354810238,
+      "RMSE": 0.015232838690280914
+    },
+    "gnn_lstm": {
+      "ADE": 0.008767888881266117,
+      "FDE": 0.0172926913946867,
+      "RMSE": 0.014275357127189636
+    }
+  },
+  "ADE": 0.008767888881266117,
+  "FDE": 0.0172926913946867,
+  "RMSE": 0.014275357127189636,
+  "model_path": "/home/basudeo/Documents/Thesis/models/gnn_lstm_graph_done.pt",
+  "past_len": 10,
+  "future_len": 20
+}
