@@ -35,7 +35,7 @@ class UavFollower(Node):
         uav_odom_topic: str = "/model/uav1/odometry",
         uav_name: str = "uav1",
         follow_distance: float = 0.0,
-        follow_height: float = 2.2,
+        follow_height: float = 6.0,
         update_period: float = 0.1,
         max_xy_speed: float = 1.6,
         max_z_speed: float = 0.6,

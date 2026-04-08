@@ -27,19 +27,17 @@ MODEL_PATH = "/home/basudeo/Documents/Thesis/models"
 GNN_SUMMARY_PATH = Path("/home/basudeo/Documents/Thesis/models/summary_gnn_graph_done.json")
 
 SPAWN_X, SPAWN_Y, SPAWN_Z = 0.0, 0.0, 0.35
-HUSKY2_X, HUSKY2_Y, HUSKY2_Z = 0.05, -2.5, 0.35
-UAV_X, UAV_Y, UAV_Z = 0.0, 2.0, 1.0
-HUSKY1_SPAWN_YAW = math.pi / 2.0
-HUSKY2_SPAWN_YAW = math.pi / 2.0
+HUSKY1_SPAWN_YAW = math.pi
+HUSKY2_SPAWN_YAW = math.pi
 UAV_SPAWN_YAW = 0.0
 WORLD_SHARED_GOAL = (34.0, 24.0, 0.35)
 WORLD_UAV_GOAL = (34.0, 24.0, 3.0)
-GROUND_MARKER_Z = 0.005
+GROUND_MARKER_Z = -0.7984
 
 BOOTSTRAP_SECONDS = 3.0
 BOOTSTRAP_LINEAR_SPEED = 0.8
 
-TARGET_INDEX = 4
+TARGET_INDEX = 2
 CONTROL_PERIOD = 0.1
 CMD_LINEAR_GAIN = 1.45
 CMD_ANGULAR_GAIN = 1.15
@@ -49,8 +47,8 @@ MAX_ANGULAR_SPEED = 0.85
 HEADING_DEADBAND = 0.12
 WAYPOINT_REACHED_DIST = 0.3
 CRUISE_SPEED = 1.1
-GOAL_TOLERANCE = 1.5
-GOAL_BLEND = 1.0
+GOAL_TOLERANCE = 0.05
+GOAL_BLEND = 0.95
 OBSTACLE_SCAN_DISTANCE = 2.2
 OBSTACLE_CLEAR_DISTANCE = 2.8
 TURN_IN_PLACE_SPEED = 0.85
@@ -165,18 +163,17 @@ def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float
   <model name="{name}">
     <static>true</static>
     <pose>{xyz[0]} {xyz[1]} {xyz[2]} 0 0 0</pose>
-    <link name="link">
-      <visual name="visual">
+    <link name="marker_link">
+      <visual name="marker_visual">
         <geometry>
-          <cylinder>
-            <radius>0.52</radius>
-            <length>0.01</length>
-          </cylinder>
+          <box>
+            <size>0.25 0.25 0.05</size>
+          </box>
         </geometry>
         <material>
           <ambient>{rgba[0]} {rgba[1]} {rgba[2]} {rgba[3]}</ambient>
           <diffuse>{rgba[0]} {rgba[1]} {rgba[2]} {rgba[3]}</diffuse>
-          <emissive>{rgba[0] * 0.35} {rgba[1] * 0.35} {rgba[2] * 0.35} {rgba[3]}</emissive>
+          <emissive>{rgba[0] * 0.5} {rgba[1] * 0.5} {rgba[2] * 0.5} {rgba[3]}</emissive>
         </material>
       </visual>
     </link>
@@ -227,7 +224,7 @@ print("Spawning Husky...")
 husky1_sdf_path = write_husky_variant(
     Path("/home/basudeo/Documents/Thesis/models/husky/model_red_tag.sdf"),
     "/cmd_vel",
-    "id_marker_red",
+    "flag_marker_red",
     (0.95, 0.12, 0.12, 1.0),
 )
 spawn_husky = (
@@ -237,29 +234,29 @@ spawn_husky = (
     f"--timeout 5000 "
     f'--req \'sdf_filename: "{husky1_sdf_path}", name: "husky_local", '
     f'pose: {{position: {{x: {SPAWN_X}, y: {SPAWN_Y}, z: {SPAWN_Z}}}, '
-    f'orientation: {{z: 0.70710678, w: 0.70710678}}}}\''
+    f'orientation: {{w: 1.0}}}}\''
 )
 subprocess.run(["bash", "-c", spawn_husky])
 time.sleep(5)
 
-print("Spawning Husky 2...")
-husky2_sdf_path = write_husky_variant(
-    Path("/home/basudeo/Documents/Thesis/models/husky/model_blue_tag.sdf"),
-    "/cmd_vel_husky2",
-    "id_marker_blue",
-    (0.12, 0.36, 0.95, 1.0),
-)
-spawn_husky2 = (
-    f"ign service -s /world/{WORLD_NAME}/create "
-    f"--reqtype ignition.msgs.EntityFactory "
-    f"--reptype ignition.msgs.Boolean "
-    f"--timeout 5000 "
-    f'--req \'sdf_filename: "{husky2_sdf_path}", name: "husky_2", '
-    f'pose: {{position: {{x: {HUSKY2_X}, y: {HUSKY2_Y}, z: {HUSKY2_Z}}}, '
-    f'orientation: {{z: 0.70710678, w: 0.70710678}}}}\''
-)
-subprocess.run(["bash", "-c", spawn_husky2])
-time.sleep(5)
+# print("Spawning Husky 2...")
+# husky2_sdf_path = write_husky_variant(
+#     Path("/home/basudeo/Documents/Thesis/models/husky/model_blue_tag.sdf"),
+#     "/cmd_vel_husky2",
+#     "flag_marker_blue",
+#     (0.12, 0.36, 0.95, 1.0),
+# )
+# spawn_husky2 = (
+#     f"ign service -s /world/{WORLD_NAME}/create "
+#     f"--reqtype ignition.msgs.EntityFactory "
+#     f"--reptype ignition.msgs.Boolean "
+#     f"--timeout 5000 "
+#     f'--req \'sdf_filename: "{husky2_sdf_path}", name: "husky_2", '
+#     f'pose: {{position: {{x: {HUSKY2_X}, y: {HUSKY2_Y}, z: {HUSKY2_Z}}}, '
+#     f'orientation: {{z: 0.70710678, w: 0.70710678}}}}\''
+# )
+# subprocess.run(["bash", "-c", spawn_husky2])
+# time.sleep(5)
 
 print("Spawning UAV...")
 spawn_uav = f"""
@@ -274,11 +271,11 @@ subprocess.run(["bash", "-c", spawn_uav])
 time.sleep(5)
 
 print("Spawning goal markers...")
-spawn_goal_marker(WORLD_NAME, "start_husky_local", (SPAWN_X, SPAWN_Y, 0.0387), (0.65, 0.15, 0.15, 1.0))
+# spawn_goal_marker(WORLD_NAME, "start_husky_local", (SPAWN_X, SPAWN_Y, 0.0387), (0.65, 0.15, 0.15, 1.0))
 spawn_goal_marker(WORLD_NAME, "goal_husky_local", (WORLD_SHARED_GOAL[0], WORLD_SHARED_GOAL[1], GROUND_MARKER_Z), (0.95, 0.12, 0.12, 1.0))
-spawn_goal_marker(WORLD_NAME, "start_husky_2", (0.1008, -2.4100, 0.0387), (0.65, 0.25, 0.70, 1.0))
-spawn_goal_marker(WORLD_NAME, "goal_husky_2", (WORLD_SHARED_GOAL[0], WORLD_SHARED_GOAL[1], GROUND_MARKER_Z), (0.12, 0.36, 0.95, 1.0))
-spawn_goal_marker(WORLD_NAME, "start_uav1", (UAV_X, UAV_Y, 0.0387), (0.65, 0.55, 0.12, 1.0))
+# spawn_goal_marker(WORLD_NAME, "start_husky_2", (0.1008, -2.4100, 0.0387), (0.65, 0.25, 0.70, 1.0))
+# spawn_goal_marker(WORLD_NAME, "goal_husky_2", (WORLD_SHARED_GOAL[0], WORLD_SHARED_GOAL[1], GROUND_MARKER_Z), (0.12, 0.36, 0.95, 1.0))
+# spawn_goal_marker(WORLD_NAME, "start_uav1", (UAV_X, UAV_Y, 0.0387), (0.65, 0.55, 0.12, 1.0))
 spawn_goal_marker(WORLD_NAME, "goal_uav1", (WORLD_UAV_GOAL[0], WORLD_UAV_GOAL[1], GROUND_MARKER_Z), (0.95, 0.85, 0.12, 1.0))
 time.sleep(1)
 
@@ -287,18 +284,18 @@ bridge_cmd = (
     "source /opt/ros/humble/setup.bash && "
     "ros2 run ros_gz_bridge parameter_bridge "
     "/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist "
-    "/cmd_vel_husky2@geometry_msgs/msg/Twist@ignition.msgs.Twist "
+    # "/cmd_vel_husky2@geometry_msgs/msg/Twist@ignition.msgs.Twist "
     "/model/husky_local/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry "
-    "/model/husky_2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry "
+    # "/model/husky_2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry "
     "/model/uav1/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry "
     f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/front_laser/scan/points"
     "@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked "
-    f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points"
-    "@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked "
+    # f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points"
+    # "@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked "
     f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/planar_laser/scan"
     "@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan "
-    f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan"
-    "@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan "
+    # f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan"
+    # "@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan "
     f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/imu_sensor/imu"
     "@sensor_msgs/msg/Imu[ignition.msgs.IMU "
     f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points"

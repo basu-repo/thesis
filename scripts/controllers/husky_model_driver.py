@@ -92,6 +92,7 @@ class ModelHuskyDriver(Node):
         bootstrap_seconds: float = 3.0,
         bootstrap_linear_speed: float = 0.45,
         bootstrap_angular_speed: float = 0.0,
+        bootstrap_turn_gain: float = 1.0,
         target_index: int = 4,
         control_period: float = 0.1,
         cmd_linear_gain: float = 0.9,
@@ -142,6 +143,7 @@ class ModelHuskyDriver(Node):
         self.bootstrap_seconds = bootstrap_seconds
         self.bootstrap_linear_speed = bootstrap_linear_speed
         self.bootstrap_angular_speed = bootstrap_angular_speed
+        self.bootstrap_turn_gain = bootstrap_turn_gain
         self.target_index = target_index
         self.control_period = control_period
         self.cmd_linear_gain = cmd_linear_gain
@@ -178,6 +180,7 @@ class ModelHuskyDriver(Node):
         self.predicted_path = None
         self.arrived = False
         self.start_time = time.monotonic()
+        self.last_diag_log = 0.0
         self.timer = self.create_timer(self.control_period, self.step)
 
         self.get_logger().info(
@@ -202,9 +205,34 @@ class ModelHuskyDriver(Node):
         self.pub.publish(msg)
 
     def bootstrap_drive(self):
-        """Collect enough motion history before the model is trusted."""
+        """Collect enough motion history before the model is trusted, turning toward goal."""
 
-        self.publish_cmd(self.bootstrap_linear_speed, self.bootstrap_angular_speed)
+        if self.current_pose is None or self.goal_xyz is None:
+            # Fallback to original behavior
+            self.publish_cmd(self.bootstrap_linear_speed, self.bootstrap_angular_speed)
+            return
+
+        goal = self._current_goal()
+        if goal is None:
+            self.publish_cmd(self.bootstrap_linear_speed, self.bootstrap_angular_speed)
+            return
+
+        # Compute heading to goal
+        dx = goal[0] - self.current_pose.position.x
+        dy = goal[1] - self.current_pose.position.y
+        goal_heading = math.atan2(dy, dx)
+        heading_error = wrap_angle(goal_heading - self.current_yaw)
+
+        # Proportional control for turning
+        angular_z = clamp(heading_error * self.bootstrap_turn_gain, -self.max_angular_speed, self.max_angular_speed)
+
+        # If heading error is large, rotate first; otherwise creep forward.
+        if abs(heading_error) > 0.6:
+            linear_x = 0.0
+        else:
+            linear_x = self.bootstrap_linear_speed * 0.5
+
+        self.publish_cmd(linear_x, angular_z)
 
     def predict_path(self):
         """Predict future planar waypoints in the current odometry frame."""
@@ -231,6 +259,15 @@ class ModelHuskyDriver(Node):
         dy = goal[1] - self.current_pose.position.y
         return math.hypot(dx, dy)
 
+    def _goal_heading(self):
+        goal = self._current_goal()
+        if goal is None or self.current_pose is None:
+            return None
+        return math.atan2(
+            goal[1] - self.current_pose.position.y,
+            goal[0] - self.current_pose.position.x,
+        )
+
     def step(self):
         if self.current_pose is None:
             return
@@ -241,13 +278,46 @@ class ModelHuskyDriver(Node):
 
         remaining = self._distance_to_goal()
         if remaining is not None and remaining <= self.goal_tolerance:
+            goal = self._current_goal()
+            if goal is not None:
+                self.get_logger().info(
+                    "Arrival triggered: "
+                    f"pose=({self.current_pose.position.x:.3f}, {self.current_pose.position.y:.3f}) "
+                    f"goal=({goal[0]:.3f}, {goal[1]:.3f}) "
+                    f"remaining={remaining:.3f} tol={self.goal_tolerance:.3f}"
+                )
             self.arrived = True
             self.publish_cmd(0.0, 0.0)
             return
 
+        now = time.monotonic()
+        if remaining is not None and (now - self.last_diag_log) >= 2.0:
+            goal = self._current_goal()
+            if goal is not None:
+                self.get_logger().info(
+                    "Tracking status: "
+                    f"pose=({self.current_pose.position.x:.3f}, {self.current_pose.position.y:.3f}) "
+                    f"goal=({goal[0]:.3f}, {goal[1]:.3f}) "
+                    f"remaining={remaining:.3f}"
+                )
+            self.last_diag_log = now
+
         if time.monotonic() - self.start_time < self.bootstrap_seconds or len(self.positions) < self.past_len:
             self.bootstrap_drive()
             return
+
+        # Enforce coarse goal alignment before trusting predicted waypoints.
+        goal_heading = self._goal_heading()
+        if goal_heading is not None:
+            goal_heading_error = wrap_angle(goal_heading - self.current_yaw)
+            if abs(goal_heading_error) > 0.5:
+                angular_z = clamp(
+                    self.cmd_angular_gain * goal_heading_error,
+                    -self.max_angular_speed,
+                    self.max_angular_speed,
+                )
+                self.publish_cmd(0.0, angular_z)
+                return
 
         pred_abs = self.predict_path()
         target_idx = min(self.target_index, len(pred_abs) - 1)
@@ -282,6 +352,9 @@ class ModelHuskyDriver(Node):
             linear_x = max(linear_x, self.min_linear_speed)
         if abs(heading_error) > 0.6:
             linear_x *= 0.5
+        # If we are strongly misaligned, prioritize heading correction.
+        if abs(heading_error) > 0.9:
+            linear_x = 0.0
         if abs(heading_error) < self.heading_deadband:
             heading_error = 0.0
 
