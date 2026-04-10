@@ -79,6 +79,13 @@ class GNNModelHuskyDriver(Node):
         hazard_timeout: float = 0.8,
         hazard_turn_speed: float = 0.7,
         history_size: int = 200,
+        stuck_timeout_seconds: float = 3.0,
+        stuck_progress_distance: float = 0.3,
+        stuck_min_command_speed: float = 0.2,
+        stuck_reverse_speed: float = -0.35,
+        stuck_reverse_seconds: float = 1.5,
+        stuck_bootstrap_seconds: float = 2.0,
+        stuck_cooldown_seconds: float = 4.0,
     ):
         super().__init__(node_name)
         if ego_node not in NODE_ORDER:
@@ -136,6 +143,13 @@ class GNNModelHuskyDriver(Node):
         self.turn_in_place_speed = turn_in_place_speed
         self.hazard_timeout = hazard_timeout
         self.hazard_turn_speed = hazard_turn_speed
+        self.stuck_timeout_seconds = stuck_timeout_seconds
+        self.stuck_progress_distance = stuck_progress_distance
+        self.stuck_min_command_speed = stuck_min_command_speed
+        self.stuck_reverse_speed = stuck_reverse_speed
+        self.stuck_reverse_seconds = stuck_reverse_seconds
+        self.stuck_bootstrap_seconds = stuck_bootstrap_seconds
+        self.stuck_cooldown_seconds = stuck_cooldown_seconds
 
         self.pub = self.create_publisher(Twist, self.cmd_topic, 10)
 
@@ -154,6 +168,11 @@ class GNNModelHuskyDriver(Node):
         self.progress_history = deque(maxlen=history_size)
         self.start_time = time.monotonic()
         self.last_snapshot_time = 0.0
+        self.last_command_linear_x = 0.0
+        self.last_command_angular_z = 0.0
+        self.stuck_recovery_until = 0.0
+        self.stuck_bootstrap_until = 0.0
+        self.stuck_cooldown_until = 0.0
 
         self.create_subscription(Odometry, odom_topics["husky_local"], self._make_odom_cb("husky_local"), 10)
         self.create_subscription(Odometry, odom_topics["husky_2"], self._make_odom_cb("husky_2"), 10)
@@ -211,10 +230,77 @@ class GNNModelHuskyDriver(Node):
         msg.linear.x = linear_x
         msg.angular.z = angular_z
         self.pub.publish(msg)
+        self.last_command_linear_x = float(linear_x)
+        self.last_command_angular_z = float(angular_z)
         self.commands[self.ego_node] = {
             "linear_x": float(linear_x),
             "angular_z": float(angular_z),
         }
+
+    def _stuck_recovery_active(self, now: float) -> bool:
+        return now < self.stuck_recovery_until
+
+    def _should_trigger_stuck_recovery(self, now: float, remaining: float | None) -> bool:
+        if self.stuck_timeout_seconds <= 0.0 or self.stuck_progress_distance <= 0.0:
+            return False
+        if self._stuck_recovery_active(now) or now < self.stuck_cooldown_until:
+            return False
+        if self.last_command_linear_x < self.stuck_min_command_speed:
+            return False
+        if remaining is not None and remaining <= max(
+            self.goal_tolerance * 1.5,
+            self.stuck_progress_distance,
+        ):
+            return False
+        if len(self.path_history) < 2:
+            return False
+
+        reference = None
+        for sample in self.path_history:
+            if (now - sample[0]) >= self.stuck_timeout_seconds:
+                reference = sample
+                break
+        if reference is None:
+            return False
+
+        moved = math.hypot(
+            float(self.current_pose.position.x) - reference[1],
+            float(self.current_pose.position.y) - reference[2],
+        )
+        return moved < self.stuck_progress_distance
+
+    def _begin_stuck_recovery(self, now: float, remaining: float | None):
+        reference = None
+        moved = 0.0
+        for sample in self.path_history:
+            if (now - sample[0]) >= self.stuck_timeout_seconds:
+                reference = sample
+                break
+        if reference is not None:
+            moved = math.hypot(
+                float(self.current_pose.position.x) - reference[1],
+                float(self.current_pose.position.y) - reference[2],
+            )
+
+        self.stuck_recovery_until = now + self.stuck_reverse_seconds
+        self.stuck_bootstrap_until = self.stuck_recovery_until + self.stuck_bootstrap_seconds
+        self.stuck_cooldown_until = self.stuck_bootstrap_until + self.stuck_cooldown_seconds
+        self.path_history.clear()
+        self.path_history.append(
+            (
+                now,
+                float(self.current_pose.position.x),
+                float(self.current_pose.position.y),
+                float(self.current_pose.position.z),
+            )
+        )
+        remaining_text = "unknown" if remaining is None else f"{remaining:.3f}"
+        self.get_logger().warn(
+            "Stuck detected, backing up before retrying: "
+            f"pose=({self.current_pose.position.x:.3f}, {self.current_pose.position.y:.3f}) "
+            f"moved={moved:.3f}m over {self.stuck_timeout_seconds:.1f}s "
+            f"remaining={remaining_text}"
+        )
 
     def bootstrap_drive(self):
         """Collect enough motion history before the model is trusted, turning toward goal."""
@@ -361,7 +447,21 @@ class GNNModelHuskyDriver(Node):
             self.publish_cmd(0.0, 0.0)
             return
 
-        if time.monotonic() - self.start_time < self.bootstrap_seconds or len(self.graph_history) < self.past_len:
+        now = time.monotonic()
+        if self._stuck_recovery_active(now):
+            self.publish_cmd(self.stuck_reverse_speed, 0.0)
+            return
+
+        if self._should_trigger_stuck_recovery(now, remaining):
+            self._begin_stuck_recovery(now, remaining)
+            self.publish_cmd(self.stuck_reverse_speed, 0.0)
+            return
+
+        if (
+            (now - self.start_time) < self.bootstrap_seconds
+            or now < self.stuck_bootstrap_until
+            or len(self.graph_history) < self.past_len
+        ):
             self.bootstrap_drive()
             return
 

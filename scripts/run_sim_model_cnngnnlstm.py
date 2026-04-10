@@ -47,8 +47,13 @@ MAX_ANGULAR_SPEED = 0.85
 HEADING_DEADBAND = 0.12
 WAYPOINT_REACHED_DIST = 0.3
 CRUISE_SPEED = 1.1
-GOAL_TOLERANCE = 0.05
+GOAL_TOLERANCE = 0.3
 GOAL_BLEND = 0.95
+STUCK_TIMEOUT_SECONDS = 3.0
+STUCK_PROGRESS_DISTANCE = 0.3
+STUCK_REVERSE_SPEED = -0.4
+STUCK_REVERSE_SECONDS = 1.5
+STUCK_BOOTSTRAP_SECONDS = 2.0
 OBSTACLE_SCAN_DISTANCE = 2.2
 OBSTACLE_CLEAR_DISTANCE = 2.8
 TURN_IN_PLACE_SPEED = 0.85
@@ -120,20 +125,20 @@ def load_husky_sdf_with_topic(topic_name: str) -> str:
 def add_husky_marker(sdf_text: str, marker_name: str, rgba: tuple[float, float, float, float]) -> str:
     marker = f"""
     <link name="{marker_name}">
-      <pose>0 0 0.45 0 0 0</pose>
+      <pose>0 0 0.32 0 0 0</pose>
       <collision name="collision">
         <geometry>
           <cylinder>
-            <radius>0.03</radius>
-            <length>1.0</length>
+            <radius>0.015</radius>
+            <length>0.25</length>
           </cylinder>
         </geometry>
       </collision>
       <visual name="visual">
         <geometry>
           <cylinder>
-            <radius>0.04</radius>
-            <length>1.05</length>
+            <radius>0.02</radius>
+            <length>0.2625</length>
           </cylinder>
         </geometry>
         <material>
@@ -164,6 +169,13 @@ def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float
     <static>true</static>
     <pose>{xyz[0]} {xyz[1]} {xyz[2]} 0 0 0</pose>
     <link name="marker_link">
+      <collision name="marker_collision">
+        <geometry>
+          <box>
+            <size>0.25 0.25 0.05</size>
+          </box>
+        </geometry>
+      </collision>
       <visual name="marker_visual">
         <geometry>
           <box>
@@ -406,6 +418,11 @@ driver = GNNModelHuskyDriver(
     obstacle_scan_distance=OBSTACLE_SCAN_DISTANCE,
     obstacle_clear_distance=OBSTACLE_CLEAR_DISTANCE,
     turn_in_place_speed=TURN_IN_PLACE_SPEED,
+    stuck_timeout_seconds=STUCK_TIMEOUT_SECONDS,
+    stuck_progress_distance=STUCK_PROGRESS_DISTANCE,
+    stuck_reverse_speed=STUCK_REVERSE_SPEED,
+    stuck_reverse_seconds=STUCK_REVERSE_SECONDS,
+    stuck_bootstrap_seconds=STUCK_BOOTSTRAP_SECONDS,
 )
 driver2 = GNNModelHuskyDriver(
     node_name="gnn_husky_driver_2",
@@ -437,6 +454,11 @@ driver2 = GNNModelHuskyDriver(
     obstacle_scan_distance=OBSTACLE_SCAN_DISTANCE,
     obstacle_clear_distance=OBSTACLE_CLEAR_DISTANCE,
     turn_in_place_speed=TURN_IN_PLACE_SPEED,
+    stuck_timeout_seconds=STUCK_TIMEOUT_SECONDS,
+    stuck_progress_distance=STUCK_PROGRESS_DISTANCE,
+    stuck_reverse_speed=STUCK_REVERSE_SPEED,
+    stuck_reverse_seconds=STUCK_REVERSE_SECONDS,
+    stuck_bootstrap_seconds=STUCK_BOOTSTRAP_SECONDS,
 )
 follower = UavFollower(
     husky_odom_topic="/model/husky_local/odometry",

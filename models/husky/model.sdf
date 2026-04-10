@@ -106,7 +106,7 @@
         </surface>
       </collision>
       <collision name="base_link_fixed_joint_lump__velodyne_base_link_collision_6">
-        <pose frame="">0.424 0 0.327 0 -0 0</pose>
+        <pose frame="">0.000 0 0.395 0 -0 0</pose>
         <geometry>
           <cylinder>
             <length>0.0717</length>
@@ -115,7 +115,7 @@
         </geometry>
       </collision>
       <collision name="base_link_fixed_joint_lump__velodyne_gimbal_plate_base_link_collision_7">
-        <pose frame="">0.424 0 0.400 0 -0 0</pose>
+        <pose frame="">0.000 0 0.468 0 -0 0</pose>
         <geometry>
           <box>
             <size>0.1 0.1 0.01</size>
@@ -192,7 +192,7 @@
       </visual>
       <!-- Bottom cylinder of Ouster/Velodyne 3D Lidar -->
       <visual name="base_link_fixed_joint_lump__velodyne_base_link_visual_10">
-        <pose frame="">0.424 0 0.327 0 -0 0</pose>
+        <pose frame="">0.000 0 0.395 0 -0 0</pose>
         <geometry>
           <mesh>
             <scale>1 1 1</scale>
@@ -202,7 +202,7 @@
       </visual>
       <!-- Top cylinder of Ouster/Velodyne 3D Lidar -->
       <visual name="base_link_fixed_joint_lump__velodyne_base_link_visual_11">
-        <pose frame="">0.424 0 0.327 0 -0 0</pose>
+        <pose frame="">0.000 0 0.395 0 -0 0</pose>
         <geometry>
           <mesh>
             <scale>1 1 1</scale>
@@ -212,7 +212,7 @@
       </visual>
       <!-- Main cylinder of Ouster/Velodyne 3D Lidar -->
       <visual name="base_link_fixed_joint_lump__velodyne_visual_12">
-        <pose frame="">0.424 0 0.327 0 -0 0</pose>
+        <pose frame="">0.000 0 0.395 0 -0 0</pose>
         <geometry>
           <mesh>
             <scale>1 1 1</scale>
@@ -241,7 +241,7 @@
         </geometry>
       </visual>
       <visual name="base_link_fixed_joint_lump__velodyne_gimbal_plate_15">
-       <pose frame="">0.424 0 0.400 0 -0 0</pose>
+       <pose frame="">0.000 0 0.468 0 -0 0</pose>
         <geometry>
           <box>
             <size>0.06 0.06 0.01</size>
@@ -404,7 +404,7 @@
 
       <!-- OS1-64 3D Laser Configuration (10x2048 or 10x1024 or 20x1024 or 20x512 as possible (rate) x (hor. res.) configs)-->
       <sensor name="front_laser" type="gpu_lidar">
-        <visualize>0</visualize>
+        <visualize>1</visualize>
         <!-- <update_rate>20</update_rate> -->
         <update_rate>10</update_rate>
         <lidar>
@@ -433,7 +433,7 @@
             <stddev>0.03</stddev>
           </noise>
         </lidar>
-        <pose>0.424 0 0.387 0 -0 0</pose>
+        <pose>0.000 0 0.455 0 -0 0</pose>
       </sensor>
 
 
