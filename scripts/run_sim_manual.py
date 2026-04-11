@@ -13,12 +13,13 @@ import math
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from project_paths import MODELS_DIR, WORLD_SDF_PATH
 
 # ---------------- CONFIG ----------------
 
-WORLD = "/home/basudeo/Documents/Thesis/worlds/sim_world.sdf"
+WORLD = str(WORLD_SDF_PATH)
 WORLD_NAME = "sim_world"
-MODEL_PATH = "/home/basudeo/Documents/Thesis/models"
+MODEL_PATH = str(MODELS_DIR)
 
 SPAWN_X, SPAWN_Y, SPAWN_Z = 0.0, 0.0, 0.35
 UAV_X, UAV_Y, UAV_Z = 0.0, 2.0, 1.0
@@ -283,7 +284,7 @@ ign service -s /world/{WORLD_NAME}/create \
 --reqtype ignition.msgs.EntityFactory \
 --reptype ignition.msgs.Boolean \
 --timeout 5000 \
---req 'sdf_filename: "/home/basudeo/Documents/Thesis/models/husky/model.sdf", name: "husky_local",
+--req 'sdf_filename: "{MODELS_DIR / "husky" / "model.sdf"}", name: "husky_local",
 pose: {{position: {{x: {SPAWN_X}, y: {SPAWN_Y}, z: {SPAWN_Z}}}, orientation: {{w: 1.0}}}}'
 """
 subprocess.run(["bash", "-c", spawn_husky])

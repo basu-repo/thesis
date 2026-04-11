@@ -42,8 +42,8 @@ class ObstacleDetectionNode(Node):
         terrain_bin_size_x: float = 0.45,
         terrain_bin_min_points: int = 4,
         terrain_min_profile_bins: int = 3,
-        terrain_max_step_z: float = 0.26,
-        terrain_max_slope_deg: float = 24.0,
+        terrain_max_step_z: float = 0.65,
+        terrain_max_slope_deg: float = 45.0,
     ):
         super().__init__(node_name)
         self.scan_topic = scan_topic

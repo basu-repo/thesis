@@ -19,28 +19,26 @@ from rclpy.executors import MultiThreadedExecutor
 from controllers.episode_metadata import EpisodeMetadataPublisher
 from controllers.husky_model_driver import ModelHuskyDriver
 from controllers.obstacle_detection import ObstacleDetectionNode
-from controllers.omnet_hazard_bridge import OmnetHazardBridge
-from controllers.uav_hazard_estimator import UavHazardEstimator
 from controllers.uav_follower import UavFollower
+from project_paths import MODELS_DIR, OMNET_DIR, RVIZ_CONFIG_PATH, WORLD_SDF_PATH
 
 
-WORLD = "/home/basudeo/Documents/Thesis/worlds/sim_world.sdf"
+WORLD = str(WORLD_SDF_PATH)
 WORLD_NAME = "sim_world"
-MODEL_PATH = "/home/basudeo/Documents/Thesis/models"
-SUMMARY_PATH = Path("/home/basudeo/Documents/Thesis/models/summary_75pct_done.json")
-RVIZ_CONFIG_PATH = Path("/home/basudeo/Documents/Thesis/rviz_config_thesis.rviz")
-OMNET_DIR = Path("/home/basudeo/Documents/Thesis/onmetpp")
+MODEL_PATH = str(MODELS_DIR)
 OMNET_BIN = OMNET_DIR / "onmetpp"
 OMNET_CONFIG = "WifiRelay"
 
 SPAWN_X, SPAWN_Y, SPAWN_Z = -311.3400, -121.7800, -0.2387
-HUSKY2_X, HUSKY2_Y, HUSKY2_Z = -2.5, 0.05, 0.35
-UAV_X, UAV_Y, UAV_Z = SPAWN_X, SPAWN_Y, SPAWN_Z + 2.5
+HUSKY2_X, HUSKY2_Y, HUSKY2_Z = SPAWN_X + 3.0, SPAWN_Y + 2.0, SPAWN_Z
+UAV_X, UAV_Y, UAV_Z = SPAWN_X + 6.0, SPAWN_Y - 4.0, SPAWN_Z + 4.0
 HUSKY1_SPAWN_YAW = math.pi
-HUSKY2_SPAWN_YAW = 0.0
+HUSKY2_SPAWN_YAW = HUSKY1_SPAWN_YAW
 UAV_SPAWN_YAW = 0.0
 HUSKY1_SPAWN_QZ = math.sin(HUSKY1_SPAWN_YAW / 2.0)
 HUSKY1_SPAWN_QW = math.cos(HUSKY1_SPAWN_YAW / 2.0)
+HUSKY2_SPAWN_QZ = math.sin(HUSKY2_SPAWN_YAW / 2.0)
+HUSKY2_SPAWN_QW = math.cos(HUSKY2_SPAWN_YAW / 2.0)
 UAV_SPAWN_QZ = math.sin(UAV_SPAWN_YAW / 2.0)
 UAV_SPAWN_QW = math.cos(UAV_SPAWN_YAW / 2.0)
 
@@ -94,10 +92,9 @@ GOAL_STOP_OFFSET = -0.5
 
 BOOTSTRAP_SECONDS = 3.0
 BOOTSTRAP_LINEAR_SPEED = 0.8
-ENABLE_SECOND_HUSKY = False
+ENABLE_SECOND_HUSKY = True
 ENABLE_UAV = True
 
-TARGET_INDEX = 2
 CONTROL_PERIOD = 0.1
 CMD_LINEAR_GAIN = 1.45
 CMD_ANGULAR_GAIN = 1.15
@@ -105,38 +102,38 @@ MIN_LINEAR_SPEED = 1.5
 MAX_LINEAR_SPEED = 2.0
 MAX_ANGULAR_SPEED = 0.85
 HEADING_DEADBAND = 0.12
-WAYPOINT_REACHED_DIST = 0.3
-GOAL_TOLERANCE = 0.3
-GOAL_BLEND = 0.9
+GOAL_TOLERANCE = 1.5
 STUCK_TIMEOUT_SECONDS = 3.0
 STUCK_PROGRESS_DISTANCE = 0.15
-STUCK_REVERSE_SPEED = -0.4
-STUCK_REVERSE_SECONDS = 1.5
+STUCK_REVERSE_SPEED = -0.8
+STUCK_REVERSE_SECONDS = 2.0
 STUCK_BOOTSTRAP_SECONDS = 2.0
-SECOND_HUSKY_TARGET_BIAS_X = 0.0
-SECOND_HUSKY_TARGET_BIAS_Y = 0.0
 OBSTACLE_FRONT_HALF_ANGLE_DEG = 30.0
 OBSTACLE_SIDE_ANGLE_DEG = 90.0
 OBSTACLE_STOP_DISTANCE = 1.8
 OBSTACLE_CAUTION_DISTANCE = 3.2
 
 UAV_FOLLOW_DISTANCE = 0.0
-UAV_FOLLOW_HEIGHT = 10.0
+UAV_FOLLOW_HEIGHT = 12.0
 UAV_UPDATE_PERIOD = 0.1
-UAV_MAX_XY_SPEED = 3.0
-UAV_MAX_Z_SPEED = 0.6
-UAV_MAX_YAW_RATE = 0.0
-UAV_XY_GAIN = 1.2
+UAV_MAX_XY_SPEED = 9.0
+UAV_MAX_Z_SPEED = 1.2
+UAV_MAX_YAW_RATE = 0.9
+UAV_XY_GAIN = 2.0
 UAV_Z_GAIN = 0.35
-UAV_YAW_GAIN = 0.0
+UAV_YAW_GAIN = 0.8
+UAV_HEADING_ALIGN_GAIN = 0.9
+UAV_MIN_FORWARD_SPEED = 0.25
 UAV_TARGET_SMOOTHING = 1.0
 UAV_XY_DEADBAND = 0.02
 UAV_Z_DEADBAND = 0.15
 UAV_YAW_DEADBAND = 0.18
 UAV_MIN_TRACK_SPEED = 0.0
 ENABLE_BAG_RECORDING = False
-ENABLE_RVIZ = True
-ENABLE_CAMERA_VIEW = True
+# ENABLE_RVIZ = True
+# ENABLE_CAMERA_VIEW = True
+ENABLE_RVIZ = False
+ENABLE_CAMERA_VIEW = False
 
 
 # Gazebo process and model-spawn helpers -------------------------------------
@@ -146,7 +143,7 @@ def run_bg(cmd):
 
 
 def load_husky_sdf_with_topic(topic_name: str) -> str:
-    husky_sdf = Path("/home/basudeo/Documents/Thesis/models/husky/model.sdf").read_text()
+    husky_sdf = (MODELS_DIR / "husky" / "model.sdf").read_text()
     husky_sdf = husky_sdf.replace("<topic>/cmd_vel</topic>", f"<topic>{topic_name}</topic>", 1)
     return husky_sdf
 
@@ -262,6 +259,14 @@ def rgbd_camera_bridge_topics(world_name: str, model_name: str, link_name: str, 
     ]
 
 
+def camera_bridge_topics(world_name: str, model_name: str, link_name: str, sensor_name: str) -> list[str]:
+    prefix = f"/world/{world_name}/model/{model_name}/link/{link_name}/sensor/{sensor_name}"
+    return [
+        f"{prefix}/image@sensor_msgs/msg/Image[ignition.msgs.Image",
+        f"{prefix}/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo",
+    ]
+
+
 def husky_sensor_bridge_topics(world_name: str, model_name: str) -> list[str]:
     base_prefix = f"/world/{world_name}/model/{model_name}/link/base_link/sensor"
     topics = [
@@ -280,7 +285,7 @@ os.environ["GZ_SIM_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("GZ_SIM_R
 
 subprocess.run(["bash", "-c", "pkill -f ros_gz_bridge || true"])
 subprocess.run(["bash", "-c", "pkill -f ign || true"])
-subprocess.run(["bash", "-c", "pkill -f /home/basudeo/Documents/Thesis/onmetpp/onmetpp || true"])
+subprocess.run(["bash", "-c", f"pkill -f {OMNET_BIN} || true"])
 
 print("Starting Gazebo...")
 gz = run_bg(f"ign gazebo {WORLD}")
@@ -301,7 +306,7 @@ time.sleep(40)
 
 print("Spawning Husky...")
 husky1_sdf_path = write_husky_variant(
-    Path("/home/basudeo/Documents/Thesis/models/husky/model_red_tag.sdf"),
+    MODELS_DIR / "husky" / "model_red_tag.sdf",
     "/cmd_vel",
     "flag_marker_red",
     (0.95, 0.12, 0.12, 1.0),
@@ -329,7 +334,7 @@ time.sleep(5)
 if ENABLE_SECOND_HUSKY:
     print("Spawning Husky 2...")
     husky2_sdf_path = write_husky_variant(
-        Path("/home/basudeo/Documents/Thesis/models/husky/model_blue_tag.sdf"),
+        MODELS_DIR / "husky" / "model_red_tag.sdf",
         "/cmd_vel_husky2",
         "flag_marker_blue",
         (0.12, 0.36, 0.95, 1.0),
@@ -341,7 +346,7 @@ if ENABLE_SECOND_HUSKY:
         f"--timeout 5000 "
         f'--req \'sdf_filename: "{husky2_sdf_path}", name: "husky_2", '
         f'pose: {{position: {{x: {HUSKY2_X}, y: {HUSKY2_Y}, z: {HUSKY2_Z}}}, '
-        f'orientation: {{w: 1.0}}}}\''
+        f'orientation: {{z: {HUSKY2_SPAWN_QZ}, w: {HUSKY2_SPAWN_QW}}}}}\''
     )
     subprocess.run(["bash", "-c", spawn_husky2])
     time.sleep(5)
@@ -370,7 +375,6 @@ print("Spawning goal markers...")
 # spawn_goal_marker(WORLD_NAME, "start_husky_local", (SPAWN_X, SPAWN_Y, 0.0387), (0.65, 0.15, 0.15, 1.0))
 spawn_goal_marker(WORLD_NAME, "goal_husky_local", (WORLD_HUSKY1_GOAL[0], WORLD_HUSKY1_GOAL[1], GROUND_MARKER_Z), (0.95, 0.12, 0.12, 1.0))
 if ENABLE_SECOND_HUSKY:
-    spawn_goal_marker(WORLD_NAME, "start_husky_2", (HUSKY2_X, HUSKY2_Y, 0.0387), (0.65, 0.25, 0.70, 1.0))
     spawn_goal_marker(WORLD_NAME, "goal_husky_2", (WORLD_HUSKY2_GOAL[0], WORLD_HUSKY2_GOAL[1], GROUND_MARKER_Z), (0.12, 0.36, 0.95, 1.0))
 if ENABLE_UAV:
     spawn_goal_marker(WORLD_NAME, "goal_uav1", (WORLD_UAV_GOAL[0], WORLD_UAV_GOAL[1], GROUND_MARKER_Z), (0.95, 0.85, 0.12, 1.0))
@@ -395,6 +399,10 @@ if ENABLE_SECOND_HUSKY:
 if ENABLE_UAV:
     bridge_topics.extend(
         [
+            "/uav1/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
+            "/uav1/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
+            "/model/uav1/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
+            "/model/uav1/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
             "/model/uav1/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
             f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
             f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[ignition.msgs.IMU",
@@ -402,6 +410,7 @@ if ENABLE_UAV:
             f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/magnetometer/magnetometer@sensor_msgs/msg/MagneticField[ignition.msgs.Magnetometer",
         ]
     )
+    bridge_topics.extend(camera_bridge_topics(WORLD_NAME, "uav1", "base_link", "camera_front"))
 bridge_cmd = (
     "source /opt/ros/humble/setup.bash && "
     "ros2 run ros_gz_bridge parameter_bridge "
@@ -410,32 +419,30 @@ bridge_cmd = (
 bridge = run_bg(bridge_cmd)
 time.sleep(2)
 
-# rviz = None
-# if ENABLE_RVIZ:
-#     print(f"Starting RViz with config: {RVIZ_CONFIG_PATH}")
-#     rviz_cmd = (
-#         "source /opt/ros/humble/setup.bash && "
-#         f"rviz2 -d {RVIZ_CONFIG_PATH}"
-#     )
-#     rviz = run_bg(rviz_cmd)
-#     time.sleep(2)
+rviz = None
+camera_view = None
 
-# camera_view = None
-# if ENABLE_CAMERA_VIEW:
-#     print("Starting camera viewer...")
-#     camera_cmd = (
-#         "source /opt/ros/humble/setup.bash && "
-#         "ros2 run rqt_image_view rqt_image_view"
-#     )
-#     camera_view = run_bg(camera_cmd)
-#     time.sleep(2)
+if ENABLE_RVIZ:
+    print(f"Starting RViz with config: {RVIZ_CONFIG_PATH}")
+    rviz_cmd = (
+        "source /opt/ros/humble/setup.bash && "
+        f"rviz2 -d {RVIZ_CONFIG_PATH}"
+    )
+    rviz = run_bg(rviz_cmd)
+    time.sleep(2)
+
+if ENABLE_CAMERA_VIEW:
+    print("Starting camera viewer...")
+    camera_cmd = (
+        "source /opt/ros/humble/setup.bash && "
+        "ros2 run rqt_image_view rqt_image_view"
+    )
+    camera_view = run_bg(camera_cmd)
+    time.sleep(2)
 
 omnet = None
 if ENABLE_UAV:
-    print("Starting OMNeT++ relay...")
-    omnet_cmd = f"cd {OMNET_DIR} && ./onmetpp -u Cmdenv -f omnetpp.ini -c {OMNET_CONFIG}"
-    omnet = run_bg(omnet_cmd)
-    time.sleep(2)
+    print("OMNeT++ relay disabled for this run.")
 
 BAG_DIR = os.path.expanduser("~/Documents/Thesis/bags")
 os.makedirs(BAG_DIR, exist_ok=True)
@@ -449,14 +456,18 @@ if ENABLE_BAG_RECORDING:
         f"ros2 bag record -o {bag_path} "
         "/cmd_vel "
         "/cmd_vel_husky2 "
+        "/husky_local/controller_state "
+        "/husky_2/controller_state "
+        "/husky_local/obstacle_action "
+        "/husky_2/obstacle_action "
+        "/husky_local/obstacle_clearance "
+        "/husky_2/obstacle_clearance "
         "/episode/husky_local/start "
         "/episode/husky_local/goal "
         "/episode/husky_2/start "
         "/episode/husky_2/goal "
         "/episode/uav1/start "
         "/episode/uav1/goal "
-        "/uav1/hazard_hint_raw "
-        "/uav1/hazard_hint_net "
         "/model/husky_local/odometry "
         "/model/husky_2/odometry "
         "/model/uav1/odometry "
@@ -465,11 +476,14 @@ if ENABLE_BAG_RECORDING:
         f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points "
         f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/planar_laser/scan "
         f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan "
+        f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/camera_front/image "
+        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/camera_front/image "
         f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/imu_sensor/imu "
         f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/imu_sensor/imu "
         f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/air_pressure/air_pressure "
         f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/magnetometer/magnetometer "
         f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points "
+        f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/camera_front/image "
     )
     recorder = run_bg(record_cmd)
 else:
@@ -478,7 +492,7 @@ else:
 print("\n==============================")
 print(" MODEL MODE ENABLED ")
 print("==============================")
-print("Press Play in Gazebo. Husky will bootstrap briefly, then switch to model-driven motion.")
+print("Press Play in Gazebo")
 print("Press Ctrl+C here when done.\n")
 
 rclpy.init()
@@ -524,6 +538,7 @@ episode_metadata = EpisodeMetadataPublisher(
 )
 husky1_obstacle_action_topic = "/husky_local/obstacle_action"
 husky1_obstacle_clearance_topic = "/husky_local/obstacle_clearance"
+husky1_controller_state_topic = "/husky_local/controller_state"
 uav_ready_topic = "/uav1/ready"
 obstacle_detector = ObstacleDetectionNode(
     node_name="husky_local_obstacle_detector",
@@ -541,19 +556,15 @@ driver = ModelHuskyDriver(
     cmd_topic="/cmd_vel",
     odom_topic="/model/husky_local/odometry",
     world_pose_topic=f"/world/{WORLD_NAME}/dynamic_pose/info",
-    scan_topic=f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/planar_laser/scan",
-    pointcloud_topic=f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/front_laser/scan/points",
-    hazard_topic="/uav1/hazard_hint_net" if ENABLE_UAV else None,
     uav_ready_topic=None,
     require_uav_ready=False,
     obstacle_action_topic=husky1_obstacle_action_topic,
     obstacle_clearance_topic=husky1_obstacle_clearance_topic,
-    summary_path=SUMMARY_PATH,
+    state_topic=husky1_controller_state_topic,
     goal_xyz=HUSKY1_GOAL,
     world_goal_xyz=HUSKY1_GOAL,
     bootstrap_seconds=BOOTSTRAP_SECONDS,
     bootstrap_linear_speed=BOOTSTRAP_LINEAR_SPEED,
-    target_index=TARGET_INDEX,
     control_period=CONTROL_PERIOD,
     cmd_linear_gain=CMD_LINEAR_GAIN,
     cmd_angular_gain=CMD_ANGULAR_GAIN,
@@ -561,9 +572,7 @@ driver = ModelHuskyDriver(
     max_linear_speed=MAX_LINEAR_SPEED,
     max_angular_speed=MAX_ANGULAR_SPEED,
     heading_deadband=HEADING_DEADBAND,
-    waypoint_reached_dist=WAYPOINT_REACHED_DIST,
     goal_tolerance=GOAL_TOLERANCE,
-    goal_blend=GOAL_BLEND,
     stuck_timeout_seconds=STUCK_TIMEOUT_SECONDS,
     stuck_progress_distance=STUCK_PROGRESS_DISTANCE,
     stuck_reverse_speed=STUCK_REVERSE_SPEED,
@@ -575,6 +584,7 @@ obstacle_detector2 = None
 if ENABLE_SECOND_HUSKY:
     husky2_obstacle_action_topic = "/husky_2/obstacle_action"
     husky2_obstacle_clearance_topic = "/husky_2/obstacle_clearance"
+    husky2_controller_state_topic = "/husky_2/controller_state"
     obstacle_detector2 = ObstacleDetectionNode(
         node_name="husky_2_obstacle_detector",
         scan_topic=f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan",
@@ -591,21 +601,15 @@ if ENABLE_SECOND_HUSKY:
         cmd_topic="/cmd_vel_husky2",
         odom_topic="/model/husky_2/odometry",
         world_pose_topic=f"/world/{WORLD_NAME}/dynamic_pose/info",
-        scan_topic=f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan",
-        pointcloud_topic=f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points",
-        hazard_topic="/uav1/hazard_hint_net" if ENABLE_UAV else None,
         uav_ready_topic=None,
         require_uav_ready=False,
         obstacle_action_topic=husky2_obstacle_action_topic,
         obstacle_clearance_topic=husky2_obstacle_clearance_topic,
-        summary_path=SUMMARY_PATH,
+        state_topic=husky2_controller_state_topic,
         goal_xyz=HUSKY2_GOAL,
         world_goal_xyz=HUSKY2_GOAL,
-        target_bias_y=SECOND_HUSKY_TARGET_BIAS_Y,
         bootstrap_seconds=BOOTSTRAP_SECONDS,
         bootstrap_linear_speed=BOOTSTRAP_LINEAR_SPEED,
-        bootstrap_angular_speed=0.0,
-        target_index=TARGET_INDEX,
         control_period=CONTROL_PERIOD,
         cmd_linear_gain=CMD_LINEAR_GAIN,
         cmd_angular_gain=CMD_ANGULAR_GAIN,
@@ -613,9 +617,7 @@ if ENABLE_SECOND_HUSKY:
         max_linear_speed=MAX_LINEAR_SPEED,
         max_angular_speed=MAX_ANGULAR_SPEED,
         heading_deadband=HEADING_DEADBAND,
-        waypoint_reached_dist=WAYPOINT_REACHED_DIST,
         goal_tolerance=GOAL_TOLERANCE,
-        goal_blend=GOAL_BLEND,
         stuck_timeout_seconds=STUCK_TIMEOUT_SECONDS,
         stuck_progress_distance=STUCK_PROGRESS_DISTANCE,
         stuck_reverse_speed=STUCK_REVERSE_SPEED,
@@ -623,8 +625,6 @@ if ENABLE_SECOND_HUSKY:
         stuck_bootstrap_seconds=STUCK_BOOTSTRAP_SECONDS,
     )
 follower = None
-hazard_estimator = None
-hazard_bridge = None
 if ENABLE_UAV:
     follower = UavFollower(
         husky_odom_topic="/model/husky_local/odometry",
@@ -643,6 +643,8 @@ if ENABLE_UAV:
         xy_gain=UAV_XY_GAIN,
         z_gain=UAV_Z_GAIN,
         yaw_gain=UAV_YAW_GAIN,
+        heading_align_gain=UAV_HEADING_ALIGN_GAIN,
+        min_forward_speed=UAV_MIN_FORWARD_SPEED,
         target_smoothing=UAV_TARGET_SMOOTHING,
         xy_deadband=UAV_XY_DEADBAND,
         z_deadband=UAV_Z_DEADBAND,
@@ -652,16 +654,6 @@ if ENABLE_UAV:
         husky_spawn_yaw=HUSKY1_SPAWN_YAW,
         uav_spawn_xyz=(UAV_X, UAV_Y, UAV_Z),
         uav_spawn_yaw=UAV_SPAWN_YAW,
-    )
-    hazard_estimator = UavHazardEstimator(
-        husky_odom_topic="/model/husky_local/odometry",
-        uav_odom_topic="/model/uav1/odometry",
-        uav_pointcloud_topic=f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points",
-        output_topic="/uav1/hazard_hint_raw",
-    )
-    hazard_bridge = OmnetHazardBridge(
-        input_topic="/uav1/hazard_hint_raw",
-        output_topic="/uav1/hazard_hint_net",
     )
 executor = MultiThreadedExecutor()
 executor.add_node(episode_metadata)
@@ -673,10 +665,6 @@ if driver2 is not None:
     executor.add_node(driver2)
 if follower is not None:
     executor.add_node(follower)
-if hazard_estimator is not None:
-    executor.add_node(hazard_estimator)
-if hazard_bridge is not None:
-    executor.add_node(hazard_bridge)
 
 try:
     executor.spin()
@@ -693,10 +681,6 @@ finally:
         driver2.destroy_node()
     if follower is not None:
         follower.destroy_node()
-    if hazard_estimator is not None:
-        hazard_estimator.destroy_node()
-    if hazard_bridge is not None:
-        hazard_bridge.destroy_node()
     rclpy.shutdown()
     if recorder is not None:
         recorder.send_signal(signal.SIGINT)

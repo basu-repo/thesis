@@ -201,7 +201,7 @@
             </sensor>
 
             <visual name="camera_visual">
-                <pose>0.172 0 -0.023 0 0.174533 0</pose>
+                <pose>0.172 0 -0.023 0 0.261799 0</pose>
                 <geometry>
                     <box>
                         <size>0.02 0.025 0.025</size>
@@ -209,7 +209,7 @@
                 </geometry>
             </visual>
             <sensor name="camera_front" type="camera">
-                <pose>0.172 0 -0.023 0 0.174533 0</pose>
+                <pose>0.172 0 -0.023 0 0.261799 0</pose>
                 <always_on>1</always_on>
                 <update_rate>20</update_rate>
                 <camera name="camera_front">
@@ -248,7 +248,7 @@
                 </camera>
             </sensor>
             <visual name="laser_visual">
-                <pose>0 0 0.05 0 0 0</pose>
+                <pose>0 0 0.05 0 0 -0.436332</pose>
                 <geometry>
                     <cylinder>
                         <radius>0.03</radius>
@@ -643,8 +643,8 @@
             <velocityGain>1.8 1.8 2.2</velocityGain>
             <attitudeGain>1.5 2.2 0.1</attitudeGain>
             <angularRateGain>0.25 0.35 0.12</angularRateGain>
-            <maximumLinearAcceleration>1.5 1.5 2.0</maximumLinearAcceleration>
-            <maximumLinearVelocity>2.0 2.0 1.5</maximumLinearVelocity>
+            <maximumLinearAcceleration>7.0 7.0 3.0</maximumLinearAcceleration>
+            <maximumLinearVelocity>9.0 9.0 2.0</maximumLinearVelocity>
             <maximumAngularVelocity>1.5 1.5 1.5</maximumAngularVelocity>
             <rotorConfiguration>
                 <rotor>

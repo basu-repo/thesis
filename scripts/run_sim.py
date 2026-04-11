@@ -17,10 +17,11 @@ from rclpy.node import Node
 import signal
 import numpy as np
 from sensor_msgs.msg import LaserScan
+from project_paths import MODELS_DIR, WORLD_SDF_PATH
 
 # ---------------- CONFIG ----------------
 
-WORLD = "/home/basudeo/Documents/Thesis/worlds/sim_world.sdf"
+WORLD = str(WORLD_SDF_PATH)
 WORLD_NAME = "sim_world"
 
 SPAWN_X, SPAWN_Y, SPAWN_Z = -60.0, -60.0, 0.3
@@ -147,7 +148,7 @@ ign service -s /world/{WORLD_NAME}/create \
 --reqtype ignition.msgs.EntityFactory \
 --reptype ignition.msgs.Boolean \
 --timeout 5000 \
---req 'sdf_filename: "/home/basudeo/Documents/Thesis/models/husky/model.sdf", name: "husky_local",
+--req 'sdf_filename: "{MODELS_DIR / "husky" / "model.sdf"}", name: "husky_local",
 pose: {{position: {{x: {SPAWN_X}, y: {SPAWN_Y}, z: {SPAWN_Z}}}, orientation: {{w: 1.0}}}}'
 """
 subprocess.run(["bash", "-c", spawn_husky])

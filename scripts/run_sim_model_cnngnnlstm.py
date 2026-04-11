@@ -19,12 +19,13 @@ from rclpy.executors import MultiThreadedExecutor
 from controllers.episode_metadata import EpisodeMetadataPublisher
 from controllers.husky_gnn_model_driver import GNNModelHuskyDriver
 from controllers.uav_follower import UavFollower
+from project_paths import MODELS_DIR, WORLD_SDF_PATH
 
 
-WORLD = "/home/basudeo/Documents/Thesis/worlds/sim_world.sdf"
+WORLD = str(WORLD_SDF_PATH)
 WORLD_NAME = "sim_world"
-MODEL_PATH = "/home/basudeo/Documents/Thesis/models"
-GNN_SUMMARY_PATH = Path("/home/basudeo/Documents/Thesis/models/summary_gnn_graph_done.json")
+MODEL_PATH = str(MODELS_DIR)
+GNN_SUMMARY_PATH = MODELS_DIR / "summary_gnn_graph_done.json"
 
 SPAWN_X, SPAWN_Y, SPAWN_Z = 0.0, 0.0, 0.35
 HUSKY1_SPAWN_YAW = math.pi
@@ -117,7 +118,7 @@ UAV_GOAL = world_to_local_goal(
 
 
 def load_husky_sdf_with_topic(topic_name: str) -> str:
-    husky_sdf = Path("/home/basudeo/Documents/Thesis/models/husky/model.sdf").read_text()
+    husky_sdf = (MODELS_DIR / "husky" / "model.sdf").read_text()
     husky_sdf = husky_sdf.replace("<topic>/cmd_vel</topic>", f"<topic>{topic_name}</topic>", 1)
     return husky_sdf
 
@@ -234,7 +235,7 @@ time.sleep(40)
 
 print("Spawning Husky...")
 husky1_sdf_path = write_husky_variant(
-    Path("/home/basudeo/Documents/Thesis/models/husky/model_red_tag.sdf"),
+    MODELS_DIR / "husky" / "model_red_tag.sdf",
     "/cmd_vel",
     "flag_marker_red",
     (0.95, 0.12, 0.12, 1.0),
@@ -253,7 +254,7 @@ time.sleep(5)
 
 # print("Spawning Husky 2...")
 # husky2_sdf_path = write_husky_variant(
-#     Path("/home/basudeo/Documents/Thesis/models/husky/model_blue_tag.sdf"),
+#     MODELS_DIR / "husky" / "model_blue_tag.sdf",
 #     "/cmd_vel_husky2",
 #     "flag_marker_blue",
 #     (0.12, 0.36, 0.95, 1.0),

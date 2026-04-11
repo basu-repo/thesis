@@ -3,7 +3,6 @@
 import math
 import time
 from collections import deque
-from pathlib import Path
 
 from geometry_msgs.msg import Twist, Vector3
 from nav_msgs.msg import Odometry
@@ -35,23 +34,16 @@ class ModelHuskyDriver(Node):
         cmd_topic: str,
         odom_topic: str,
         world_pose_topic: str | None,
-        scan_topic: str | None,
-        pointcloud_topic: str | None,
-        hazard_topic: str | None,
-        summary_path: str | Path,
         uav_ready_topic: str | None = None,
         require_uav_ready: bool = False,
         obstacle_action_topic: str | None = None,
         obstacle_clearance_topic: str | None = None,
+        state_topic: str | None = None,
         goal_xyz: tuple[float, float, float] | None = None,
         world_goal_xyz: tuple[float, float, float] | None = None,
-        target_bias_x: float = 0.0,
-        target_bias_y: float = 0.0,
         bootstrap_seconds: float = 3.0,
         bootstrap_linear_speed: float = 0.45,
-        bootstrap_angular_speed: float = 0.0,
         bootstrap_turn_gain: float = 1.0,
-        target_index: int = 4,
         control_period: float = 0.1,
         cmd_linear_gain: float = 0.9,
         cmd_angular_gain: float = 1.6,
@@ -59,18 +51,12 @@ class ModelHuskyDriver(Node):
         max_linear_speed: float = 0.9,
         max_angular_speed: float = 1.2,
         heading_deadband: float = 0.08,
-        waypoint_reached_dist: float = 0.2,
         goal_tolerance: float = 1.5,
-        goal_blend: float = 0.75,
-        final_approach_distance: float = 6.0,
         goal_align_heading_threshold: float = 0.5,
         goal_align_linear_speed: float = 0.45,
         obstacle_stop_distance: float = 1.8,
         obstacle_turn_speed: float = 1.35,
         obstacle_turn_speed_close: float = 1.8,
-        obstacle_reverse_speed: float = -0.35,
-        obstacle_stop_seconds: float = 0.5,
-        obstacle_recovery_seconds: float = 2.0,
         stuck_timeout_seconds: float = 3.0,
         stuck_progress_distance: float = 0.15,
         stuck_min_command_speed: float = 0.2,
@@ -78,32 +64,25 @@ class ModelHuskyDriver(Node):
         stuck_reverse_seconds: float = 1.5,
         stuck_bootstrap_seconds: float = 2.0,
         stuck_cooldown_seconds: float = 4.0,
+        commit_clearance_distance: float = 3.5,
+        commit_min_distance: float = 1.8,
+        commit_linear_speed: float = 1.0,
+        commit_max_angular_speed: float = 0.35,
         reassess_timeout_seconds: float = 2.5,
         reassess_pause_seconds: float = 0.8,
         reassess_min_goal_progress: float = 0.35,
         reassess_cooldown_seconds: float = 1.5,
-        cliff_forward_min_x: float = 0.8,
-        cliff_forward_max_x: float = 3.0,
-        cliff_half_width_y: float = 0.8,
-        cliff_ground_min_z: float = -1.2,
-        cliff_ground_max_z: float = -0.03,
-        cliff_min_ground_points: int = 12,
-        hazard_timeout: float = 0.8,
-        hazard_caution_speed: float = 0.18,
-        hazard_turn_speed: float = 0.7,
     ):
         super().__init__(node_name)
 
         self.cmd_topic = cmd_topic
         self.odom_topic = odom_topic
         self.world_pose_topic = world_pose_topic
-        self.scan_topic = scan_topic
-        self.pointcloud_topic = pointcloud_topic
-        self.hazard_topic = hazard_topic
         self.uav_ready_topic = uav_ready_topic
         self.require_uav_ready = require_uav_ready
         self.obstacle_action_topic = obstacle_action_topic
         self.obstacle_clearance_topic = obstacle_clearance_topic
+        self.state_topic = state_topic
         self.goal_xyz = goal_xyz
         self.world_goal_xyz = world_goal_xyz
         self.bootstrap_seconds = bootstrap_seconds
@@ -122,6 +101,17 @@ class ModelHuskyDriver(Node):
         self.obstacle_stop_distance = obstacle_stop_distance
         self.obstacle_turn_speed = obstacle_turn_speed
         self.obstacle_turn_speed_close = obstacle_turn_speed_close
+        self.stuck_timeout_seconds = stuck_timeout_seconds
+        self.stuck_progress_distance = stuck_progress_distance
+        self.stuck_min_command_speed = stuck_min_command_speed
+        self.stuck_reverse_speed = stuck_reverse_speed
+        self.stuck_reverse_seconds = stuck_reverse_seconds
+        self.stuck_bootstrap_seconds = stuck_bootstrap_seconds
+        self.stuck_cooldown_seconds = stuck_cooldown_seconds
+        self.commit_clearance_distance = commit_clearance_distance
+        self.commit_min_distance = commit_min_distance
+        self.commit_linear_speed = commit_linear_speed
+        self.commit_max_angular_speed = commit_max_angular_speed
         self.reassess_timeout_seconds = reassess_timeout_seconds
         self.reassess_pause_seconds = reassess_pause_seconds
         self.reassess_min_goal_progress = reassess_min_goal_progress
@@ -129,6 +119,11 @@ class ModelHuskyDriver(Node):
         self.turn_limit_radians = math.pi / 2.0
 
         self.pub = self.create_publisher(Twist, self.cmd_topic, 10)
+        self.state_pub = (
+            self.create_publisher(String, self.state_topic, 10)
+            if self.state_topic is not None
+            else None
+        )
         self.create_subscription(Odometry, self.odom_topic, self.odom_cb, 10)
         if self.world_pose_topic is not None:
             self.create_subscription(TFMessage, self.world_pose_topic, self.world_pose_cb, 10)
@@ -155,12 +150,14 @@ class ModelHuskyDriver(Node):
         self.state_until = 0.0
         self.avoid_direction = None
         self.avoid_start_heading = None
+        self.commit_start_xy = None
 
         self.remaining_history = deque(maxlen=120)
         self.last_diag_log = 0.0
         self.last_command_linear_x = 0.0
         self.last_command_angular_z = 0.0
         self.last_uav_wait_log = 0.0
+        self.stuck_cooldown_until = 0.0
         self.start_time = time.monotonic()
 
         self.timer = self.create_timer(self.control_period, self.step)
@@ -176,6 +173,23 @@ class ModelHuskyDriver(Node):
         self.pub.publish(msg)
         self.last_command_linear_x = float(linear_x)
         self.last_command_angular_z = float(angular_z)
+
+    def _state_label(self) -> str:
+        if self.arrived:
+            return "arrived"
+        if self.state == "avoid":
+            if self.avoid_direction == "left":
+                return "avoid_left"
+            if self.avoid_direction == "right":
+                return "avoid_right"
+        return self.state
+
+    def publish_state(self):
+        if self.state_pub is None:
+            return
+        msg = String()
+        msg.data = self._state_label()
+        self.state_pub.publish(msg)
 
     def odom_cb(self, msg: Odometry):
         pose = msg.pose.pose
@@ -317,6 +331,32 @@ class ModelHuskyDriver(Node):
             f"Reassessing navigation: reason={reason} remaining={remaining:.3f}"
         )
 
+    def _enter_commit_forward(self, now: float, remaining: float):
+        current_xy = self._current_xy()
+        self.commit_start_xy = None if current_xy is None else (float(current_xy[0]), float(current_xy[1]))
+        self.avoid_direction = None
+        self.avoid_start_heading = None
+        self._enter_state("commit_forward")
+        self.remaining_history.clear()
+        self.remaining_history.append((now, float(remaining)))
+        self.get_logger().info(
+            "Commit forward: "
+            f"front={self._front_clearance():.2f} "
+            f"clear_target={self.commit_clearance_distance:.2f} "
+            f"travel_target={self.commit_min_distance:.2f}"
+        )
+
+    def _enter_reverse(self, now: float, remaining: float, reason: str):
+        self._enter_state("reverse", now + self.stuck_reverse_seconds)
+        self.stuck_cooldown_until = now + self.stuck_reverse_seconds + self.stuck_cooldown_seconds
+        self.remaining_history.clear()
+        self.remaining_history.append((now, float(remaining)))
+        self.get_logger().info(
+            "Stuck recovery: "
+            f"reason={reason} remaining={remaining:.3f} "
+            f"reverse_speed={self.stuck_reverse_speed:.2f} duration={self.stuck_reverse_seconds:.2f}"
+        )
+
     def _should_reassess(self, now: float, remaining: float | None) -> bool:
         if remaining is None or self._obstacle_active():
             return False
@@ -331,6 +371,27 @@ class ModelHuskyDriver(Node):
             return False
         goal_progress = reference[1] - remaining
         return goal_progress < self.reassess_min_goal_progress
+
+    def _should_reverse(self, now: float, remaining: float | None) -> bool:
+        if remaining is None:
+            return False
+        if self.state in {"reverse", "recover", "reassess", "commit_forward"} or now < self.state_until:
+            return False
+        if now < self.stuck_cooldown_until:
+            return False
+        if self.last_command_linear_x < self.stuck_min_command_speed:
+            return False
+        reference = None
+        for sample in self.remaining_history:
+            if (now - sample[0]) >= self.stuck_timeout_seconds:
+                reference = sample
+                break
+        if reference is None:
+            return False
+        goal_progress = reference[1] - remaining
+        if goal_progress >= self.stuck_progress_distance:
+            return False
+        return self._obstacle_active() or self._front_clearance() <= (self.obstacle_stop_distance + 0.8)
 
     def _goal_speed(self, remaining: float, heading_error: float) -> float:
         linear = clamp(self.cmd_linear_gain * remaining, self.min_linear_speed, self.max_linear_speed)
@@ -349,6 +410,25 @@ class ModelHuskyDriver(Node):
         if remaining < 1.0:
             linear = min(linear, 0.45)
         return max(0.0, linear)
+
+    def _commit_distance_traveled(self) -> float:
+        current_xy = self._current_xy()
+        if self.commit_start_xy is None or current_xy is None:
+            return 0.0
+        return math.hypot(current_xy[0] - self.commit_start_xy[0], current_xy[1] - self.commit_start_xy[1])
+
+    def _commit_command(self):
+        goal_heading = self._goal_heading()
+        current_heading = self._current_heading()
+        if goal_heading is None or current_heading is None:
+            return (self.commit_linear_speed, 0.0)
+        heading_error = wrap_angle(goal_heading - current_heading)
+        angular_z = clamp(
+            0.45 * self.cmd_angular_gain * heading_error,
+            -self.commit_max_angular_speed,
+            self.commit_max_angular_speed,
+        )
+        return (self.commit_linear_speed, angular_z)
 
     def _goal_command(self):
         goal_heading = self._goal_heading()
@@ -409,14 +489,12 @@ class ModelHuskyDriver(Node):
                 self.avoid_start_heading = None
                 self._enter_state("go_to_goal")
                 return self._goal_command()
-            self._enter_reassess(now, remaining, "avoid_turn_limit")
-            return (0.0, 0.0)
+            self._enter_reverse(now, remaining, "avoid_turn_limit")
+            return (self.stuck_reverse_speed, 0.0)
 
         if not self._obstacle_active() and front > (self.obstacle_stop_distance + 0.7):
-            self.avoid_direction = None
-            self.avoid_start_heading = None
-            self._enter_state("go_to_goal")
-            return self._goal_command()
+            self._enter_commit_forward(now, remaining)
+            return self._commit_command()
 
         if front <= self.obstacle_stop_distance:
             linear_x = 0.0
@@ -427,6 +505,7 @@ class ModelHuskyDriver(Node):
         return (linear_x, angular_z)
 
     def step(self):
+        self.publish_state()
         current_xy = self._current_xy()
         current_heading = self._current_heading()
         if current_xy is None or current_heading is None:
@@ -484,6 +563,41 @@ class ModelHuskyDriver(Node):
                 return
             self._enter_state("go_to_goal")
 
+        if self.state == "reverse":
+            if now < self.state_until:
+                self.publish_cmd(self.stuck_reverse_speed, 0.0)
+                return
+            self.remaining_history.clear()
+            self.remaining_history.append((now, float(remaining)))
+            self._enter_state("recover", now + self.stuck_bootstrap_seconds)
+            self.publish_cmd(0.0, 0.0)
+            return
+
+        if self.state == "recover":
+            if now < self.state_until:
+                self.publish_cmd(0.0, 0.0)
+                return
+            self.remaining_history.clear()
+            self.remaining_history.append((now, float(remaining)))
+            self._enter_state("go_to_goal")
+
+        if self.state == "commit_forward":
+            traveled = self._commit_distance_traveled()
+            front = self._front_clearance()
+            if self._obstacle_active() and front <= self.obstacle_stop_distance:
+                self.commit_start_xy = None
+                self._enter_avoid(now)
+                self.publish_cmd(*self._avoid_command(now, remaining))
+                return
+            if traveled >= self.commit_min_distance and front >= self.commit_clearance_distance:
+                self.commit_start_xy = None
+                self.remaining_history.clear()
+                self.remaining_history.append((now, float(remaining)))
+                self._enter_state("go_to_goal")
+            else:
+                self.publish_cmd(*self._commit_command())
+                return
+
         if self.state == "bootstrap":
             if (now - self.start_time) < self.bootstrap_seconds:
                 self.publish_cmd(*self._bootstrap_command())
@@ -495,6 +609,11 @@ class ModelHuskyDriver(Node):
 
         if self.state == "avoid":
             self.publish_cmd(*self._avoid_command(now, remaining))
+            return
+
+        if self._should_reverse(now, remaining):
+            self._enter_reverse(now, remaining, "goal_progress_stalled")
+            self.publish_cmd(self.stuck_reverse_speed, 0.0)
             return
 
         if self._should_reassess(now, remaining):

@@ -1,12 +1,12 @@
-"""UAV follower controller used during live simulation.
+"""Simple UAV follower used during live simulation.
 
-The UAV tracks the Husky with a configurable offset and altitude so it can act
-as an aerial observer while the ground vehicles execute their mission.
+The UAV should stay above the Husky, face the Husky, and recover altitude
+aggressively if it drops too low while chasing.
 """
 
 import math
-import subprocess
 
+from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from std_msgs.msg import Bool
@@ -25,6 +25,18 @@ def clamp(value, min_value, max_value):
 
 def wrap_angle(angle):
     return math.atan2(math.sin(angle), math.cos(angle))
+
+
+def xy_distance(a, b):
+    return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
+
+
+def clamp_vector(x, y, max_mag):
+    mag = math.hypot(x, y)
+    if mag <= max_mag or mag <= 1e-9:
+        return x, y
+    scale = max_mag / mag
+    return x * scale, y * scale
 
 
 def local_pose_to_world(pose, spawn_xyz, spawn_yaw):
@@ -48,26 +60,27 @@ def local_pose_to_world(pose, spawn_xyz, spawn_yaw):
 
 
 def extract_model_transform(msg: TFMessage, model_name: str):
+    selected_model = None
     selected_base_link = None
     for transform in msg.transforms:
         child = transform.child_frame_id or ""
         child_parts = [part for part in child.split("/") if part]
+        if model_name not in child_parts:
+            continue
+        if child_parts and child_parts[-1] == "base_link":
+            selected_base_link = transform
+            continue
         if (
             child == model_name
             or child.endswith(f"/{model_name}")
-            or model_name in child_parts
-        ) and not child.endswith("/base_link"):
-            return transform
-        if (
-            child.endswith("/base_link")
-            and model_name in child_parts
+            or (child_parts and child_parts[-1] == model_name)
         ):
-            selected_base_link = transform
-    return selected_base_link
+            selected_model = transform
+    return selected_base_link or selected_model
 
 
 class UavFollower(Node):
-    """Track the Husky smoothly by publishing body-frame UAV velocity commands."""
+    """Keep the UAV above the Husky and yawed toward it."""
 
     def __init__(
         self,
@@ -78,25 +91,27 @@ class UavFollower(Node):
         husky_model_name: str = "husky_local",
         uav_model_name: str = "uav1",
         uav_name: str = "uav1",
-        follow_distance: float = 2.0,
-        follow_height: float = 10.0,
+        follow_distance: float = 0.0,
+        follow_height: float = 18.0,
         update_period: float = 0.1,
-        max_xy_speed: float = 1.6,
-        max_z_speed: float = 0.6,
-        max_yaw_rate: float = 0.6,
-        xy_gain: float = 0.45,
+        max_xy_speed: float = 7.0,
+        max_z_speed: float = 1.2,
+        max_yaw_rate: float = 0.9,
+        xy_gain: float = 1.8,
         z_gain: float = 0.35,
-        yaw_gain: float = 0.18,
-        target_smoothing: float = 0.1,
-        xy_deadband: float = 0.12,
+        yaw_gain: float = 0.8,
+        heading_align_gain: float = 0.0,
+        min_forward_speed: float = 0.0,
+        target_smoothing: float = 1.0,
+        xy_deadband: float = 0.02,
         z_deadband: float = 0.15,
         yaw_deadband: float = 0.18,
-        min_track_speed: float = 0.05,
+        min_track_speed: float = 0.0,
         catchup_distance: float = 3.0,
         catchup_xy_gain: float = 0.8,
         catchup_max_xy_speed: float = 2.4,
         reenable_period: float = 2.0,
-        takeoff_hold_seconds: float = 2.0,
+        takeoff_hold_seconds: float = 0.0,
         altitude_tolerance: float = 0.4,
         min_follow_altitude: float = 2.0,
         ready_topic: str = "/uav1/ready",
@@ -104,6 +119,10 @@ class UavFollower(Node):
         husky_spawn_yaw: float = 0.0,
         uav_spawn_xyz: tuple[float, float, float] | None = None,
         uav_spawn_yaw: float = 0.0,
+        mission_goal_xyz: tuple[float, float, float] | None = None,
+        path_start_xyz: tuple[float, float, float] | None = None,
+        path_goal_xyz: tuple[float, float, float] | None = None,
+        goal_blend_start_progress: float = 0.7,
     ):
         super().__init__(node_name)
         self.uav_name = uav_name
@@ -118,32 +137,35 @@ class UavFollower(Node):
         self.xy_gain = xy_gain
         self.z_gain = z_gain
         self.yaw_gain = yaw_gain
-        self.target_smoothing = target_smoothing
         self.xy_deadband = xy_deadband
         self.z_deadband = z_deadband
         self.yaw_deadband = yaw_deadband
-        self.min_track_speed = min_track_speed
-        self.catchup_distance = catchup_distance
-        self.catchup_xy_gain = catchup_xy_gain
-        self.catchup_max_xy_speed = catchup_max_xy_speed
-        self.takeoff_hold_seconds = takeoff_hold_seconds
-        self.altitude_tolerance = altitude_tolerance
         self.min_follow_altitude = min_follow_altitude
         self.ready_topic = ready_topic
         self.husky_spawn_xyz = husky_spawn_xyz
         self.husky_spawn_yaw = husky_spawn_yaw
         self.uav_spawn_xyz = uav_spawn_xyz
         self.uav_spawn_yaw = uav_spawn_yaw
+        self.min_world_altitude = 4.0
+        self.catchup_height_buffer = 6.0
+        self.state_log_period = 2.0
+        self.follow_log_period = 1.0
 
         self.husky_pose = None
         self.husky_twist = None
         self.uav_pose = None
         self.husky_world_state = None
         self.uav_world_state = None
-        self.filtered_target = None
-        self.takeoff_start_time = None
+        self.last_state_log_time = 0.0
+        self.last_follow_log_time = 0.0
         self.ready_sent = False
+
+        self.cmd_pub_model = self.create_publisher(Twist, f"/model/{self.uav_name}/command/twist", 10)
+        self.cmd_pub_direct = self.create_publisher(Twist, f"/{self.uav_name}/command/twist", 10)
+        self.enable_pub_model = self.create_publisher(Bool, f"/model/{self.uav_name}/enable", 10)
+        self.enable_pub_direct = self.create_publisher(Bool, f"/{self.uav_name}/enable", 10)
         self.ready_pub = self.create_publisher(Bool, self.ready_topic, 10)
+
         self.create_subscription(Odometry, husky_odom_topic, self.husky_odom_cb, 10)
         self.create_subscription(Odometry, uav_odom_topic, self.uav_odom_cb, 10)
         if self.world_pose_topic is not None:
@@ -151,6 +173,13 @@ class UavFollower(Node):
         self.create_timer(update_period, self.follow_husky)
         self.create_timer(reenable_period, self.enable_controller)
         self.enable_controller()
+        self.get_logger().info(
+            "UAV follower started: "
+            f"follow_distance={self.follow_distance:.2f}m "
+            f"follow_height={self.follow_height:.2f}m "
+            f"cmd_topics=(/model/{self.uav_name}/command/twist, /{self.uav_name}/command/twist) "
+            f"enable_topics=(/model/{self.uav_name}/enable, /{self.uav_name}/enable)"
+        )
 
     def husky_odom_cb(self, msg):
         self.husky_pose = msg.pose.pose
@@ -158,8 +187,6 @@ class UavFollower(Node):
 
     def uav_odom_cb(self, msg):
         self.uav_pose = msg.pose.pose
-        if self.takeoff_start_time is None:
-            self.takeoff_start_time = self.get_clock().now().nanoseconds / 1e9
 
     def world_pose_cb(self, msg: TFMessage):
         husky_tf = extract_model_transform(msg, self.husky_model_name)
@@ -183,16 +210,14 @@ class UavFollower(Node):
                 "z": float(t.z),
                 "yaw": quaternion_to_yaw(r.x, r.y, r.z, r.w),
             }
-            if self.takeoff_start_time is None:
-                self.takeoff_start_time = self.get_clock().now().nanoseconds / 1e9
 
     def _husky_state(self):
         if self.husky_world_state is not None:
-            return self.husky_world_state
+            return self.husky_world_state, "world_pose"
         if self.husky_pose is None:
-            return None
+            return None, "missing"
         if self.husky_spawn_xyz is not None:
-            return local_pose_to_world(self.husky_pose, self.husky_spawn_xyz, self.husky_spawn_yaw)
+            return local_pose_to_world(self.husky_pose, self.husky_spawn_xyz, self.husky_spawn_yaw), "spawn_corrected_odom"
         p = self.husky_pose.position
         q = self.husky_pose.orientation
         return {
@@ -200,15 +225,15 @@ class UavFollower(Node):
             "y": float(p.y),
             "z": float(p.z),
             "yaw": quaternion_to_yaw(q.x, q.y, q.z, q.w),
-        }
+        }, "odom"
 
     def _uav_state(self):
         if self.uav_world_state is not None:
-            return self.uav_world_state
+            return self.uav_world_state, "world_pose"
         if self.uav_pose is None:
-            return None
+            return None, "missing"
         if self.uav_spawn_xyz is not None:
-            return local_pose_to_world(self.uav_pose, self.uav_spawn_xyz, self.uav_spawn_yaw)
+            return local_pose_to_world(self.uav_pose, self.uav_spawn_xyz, self.uav_spawn_yaw), "spawn_corrected_odom"
         p = self.uav_pose.position
         q = self.uav_pose.orientation
         return {
@@ -216,103 +241,132 @@ class UavFollower(Node):
             "y": float(p.y),
             "z": float(p.z),
             "yaw": quaternion_to_yaw(q.x, q.y, q.z, q.w),
-        }
+        }, "odom"
 
     def enable_controller(self):
-        cmd = (
-            "ign topic "
-            f"-t /{self.uav_name}/enable "
-            "-m ignition.msgs.Boolean "
-            "-p 'data: true'"
+        msg = Bool()
+        msg.data = True
+        self.enable_pub_model.publish(msg)
+        self.enable_pub_direct.publish(msg)
+        self.get_logger().info(
+            f"UAV controller enable sent on /model/{self.uav_name}/enable and /{self.uav_name}/enable"
         )
-        subprocess.run(["bash", "-c", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def follow_husky(self):
-        husky_state = self._husky_state()
-        uav_state = self._uav_state()
+        husky_state, husky_source = self._husky_state()
+        uav_state, uav_source = self._uav_state()
         if husky_state is None or uav_state is None:
             return
 
-        husky_twist = self.husky_twist
+        now = self.get_clock().now().nanoseconds / 1e9
+        if now - self.last_state_log_time >= self.state_log_period:
+            self.get_logger().info(
+                f"uav_state_source husky={husky_source} uav={uav_source} "
+                f"world_topic={'on' if self.world_pose_topic is not None else 'off'}"
+            )
+            self.last_state_log_time = now
+
         husky_yaw = husky_state["yaw"]
         uav_yaw = uav_state["yaw"]
 
-        raw_target_x = husky_state["x"] + self.follow_distance * math.cos(husky_yaw)
-        raw_target_y = husky_state["y"] + self.follow_distance * math.sin(husky_yaw)
-        raw_target_z = max(husky_state["z"] + self.follow_height, 1.5)
+        target_x = husky_state["x"] + self.follow_distance * math.cos(husky_yaw)
+        target_y = husky_state["y"] + self.follow_distance * math.sin(husky_yaw)
 
-        now = self.get_clock().now().nanoseconds / 1e9
-        altitude_error = raw_target_z - uav_state["z"]
-        ready_now = False
-        if self.takeoff_start_time is not None:
-            min_safe_altitude = max(husky_state["z"] + self.min_follow_altitude, 1.5)
-            ready_now = (
-                (now - self.takeoff_start_time) >= self.takeoff_hold_seconds
-                and uav_state["z"] >= min_safe_altitude
-                and abs(altitude_error) <= self.altitude_tolerance
-            )
+        full_target_z = max(husky_state["z"] + self.follow_height, self.min_world_altitude)
+        catchup_target_z = max(
+            full_target_z - 1.0,
+            husky_state["z"] + self.min_follow_altitude + self.catchup_height_buffer,
+            self.min_world_altitude,
+        )
 
-        if self.filtered_target is None:
-            self.filtered_target = {"x": raw_target_x, "y": raw_target_y, "z": raw_target_z}
-        else:
-            alpha = self.target_smoothing
-            self.filtered_target["x"] += alpha * (raw_target_x - self.filtered_target["x"])
-            self.filtered_target["y"] += alpha * (raw_target_y - self.filtered_target["y"])
-            self.filtered_target["z"] += alpha * (raw_target_z - self.filtered_target["z"])
-
-        error_x_world = self.filtered_target["x"] - uav_state["x"]
-        error_y_world = self.filtered_target["y"] - uav_state["y"]
-        error_z = self.filtered_target["z"] - uav_state["z"]
+        error_x_world = target_x - uav_state["x"]
+        error_y_world = target_y - uav_state["y"]
         xy_error = math.hypot(error_x_world, error_y_world)
 
-        if husky_twist is None:
-            husky_vx_body = 0.0
-            husky_vy_body = 0.0
-            husky_yaw_rate = 0.0
+        if xy_error > 8.0:
+            alt_mode = "catchup"
+            target_z = catchup_target_z
         else:
-            husky_vx_body = husky_twist.linear.x
-            husky_vy_body = husky_twist.linear.y
-            husky_yaw_rate = husky_twist.angular.z
+            alt_mode = "full"
+            target_z = full_target_z
 
-        husky_vx_world = math.cos(husky_yaw) * husky_vx_body - math.sin(husky_yaw) * husky_vy_body
-        husky_vy_world = math.sin(husky_yaw) * husky_vx_body + math.cos(husky_yaw) * husky_vy_body
+        error_z = target_z - uav_state["z"]
+        altitude_recovery = uav_state["z"] < (self.min_world_altitude + 1.0) or error_z > 6.0
 
-        # Pure tracking controller: match UGV world velocity, then add only the
-        # correction needed to stay above the target point.
+        husky_vx_world = 0.0
+        husky_vy_world = 0.0
+        if self.husky_twist is not None:
+            husky_vx_body = self.husky_twist.linear.x
+            husky_vy_body = self.husky_twist.linear.y
+            husky_vx_world = math.cos(husky_yaw) * husky_vx_body - math.sin(husky_yaw) * husky_vy_body
+            husky_vy_world = math.sin(husky_yaw) * husky_vx_body + math.cos(husky_yaw) * husky_vy_body
+
         desired_vx_world = husky_vx_world + self.xy_gain * error_x_world
         desired_vy_world = husky_vy_world + self.xy_gain * error_y_world
+        desired_vx_world, desired_vy_world = clamp_vector(desired_vx_world, desired_vy_world, self.max_xy_speed)
+
+        if altitude_recovery:
+            desired_vx_world *= 0.10
+            desired_vy_world *= 0.10
+            alt_mode = "altitude_recovery"
 
         cos_yaw = math.cos(uav_yaw)
         sin_yaw = math.sin(uav_yaw)
-        linear_x = cos_yaw * desired_vx_world + sin_yaw * desired_vy_world
-        linear_y = -sin_yaw * desired_vx_world + cos_yaw * desired_vy_world
-        linear_x = clamp(linear_x, -self.max_xy_speed, self.max_xy_speed)
-        linear_y = clamp(linear_y, -self.max_xy_speed, self.max_xy_speed)
-        linear_z = clamp(self.z_gain * error_z, -self.max_z_speed, self.max_z_speed)
-        yaw_error = wrap_angle(husky_yaw - uav_yaw)
-        angular_z = clamp(husky_yaw_rate + self.yaw_gain * yaw_error, -self.max_yaw_rate, self.max_yaw_rate)
-        husky_speed = math.hypot(husky_vx_world, husky_vy_world)
+        cmd_body_x = cos_yaw * desired_vx_world + sin_yaw * desired_vy_world
+        cmd_body_y = -sin_yaw * desired_vx_world + cos_yaw * desired_vy_world
+        cmd_body_x, cmd_body_y = clamp_vector(cmd_body_x, cmd_body_y, self.max_xy_speed)
 
-        if xy_error < self.xy_deadband and husky_speed < self.min_track_speed:
-            linear_x = 0.0
-            linear_y = 0.0
+        linear_z = clamp(self.z_gain * error_z, -self.max_z_speed, self.max_z_speed)
+        if altitude_recovery and error_z > 0.0:
+            linear_z = max(linear_z, 0.85 * self.max_z_speed)
+        if uav_state["z"] <= self.min_world_altitude + 0.25:
+            linear_z = max(linear_z, self.max_z_speed)
+        elif uav_state["z"] <= self.min_world_altitude + 0.5:
+            linear_z = max(0.0, linear_z)
         if abs(error_z) < self.z_deadband:
             linear_z = 0.0
+
+        if xy_error > 1e-6:
+            yaw_target = math.atan2(error_y_world, error_x_world)
+        else:
+            yaw_target = husky_yaw
+        yaw_error = wrap_angle(yaw_target - uav_yaw)
+        yaw_cmd = clamp(self.yaw_gain * yaw_error, -self.max_yaw_rate, self.max_yaw_rate)
         if abs(yaw_error) < self.yaw_deadband:
-            angular_z = 0.0
+            yaw_cmd = 0.0
 
-        msg = (
-            f"linear: {{x: {linear_x}, y: {linear_y}, z: {linear_z}}} "
-            f"angular: {{x: 0.0, y: 0.0, z: {angular_z}}}"
+        cmd_msg = Twist()
+        cmd_msg.linear.x = float(cmd_body_x)
+        cmd_msg.linear.y = float(cmd_body_y)
+        cmd_msg.linear.z = float(linear_z)
+        cmd_msg.angular.z = float(yaw_cmd)
+        self.cmd_pub_model.publish(cmd_msg)
+        self.cmd_pub_direct.publish(cmd_msg)
+
+        ready_now = (
+            uav_state["z"] >= max(self.min_world_altitude, husky_state["z"] + self.min_follow_altitude)
+            and abs(error_z) <= max(0.5, self.z_deadband)
         )
-        cmd = f"ign topic -t /{self.uav_name}/command/twist -m ignition.msgs.Twist -p '{msg}'"
-        subprocess.run(["bash", "-c", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
         ready_msg = Bool()
         ready_msg.data = ready_now
         self.ready_pub.publish(ready_msg)
         if ready_now and not self.ready_sent:
-            self.get_logger().info(
-                f"UAV ready: altitude reached and follower active on {self.ready_topic}"
-            )
+            self.get_logger().info(f"UAV ready on {self.ready_topic}")
             self.ready_sent = True
+        elif not ready_now:
+            self.ready_sent = False
+
+        if now - self.last_follow_log_time >= self.follow_log_period:
+            self.get_logger().info(
+                "uav_follow "
+                f"husky=({husky_state['x']:.2f},{husky_state['y']:.2f},{husky_state['z']:.2f}) "
+                f"uav=({uav_state['x']:.2f},{uav_state['y']:.2f},{uav_state['z']:.2f}) "
+                f"target=({target_x:.2f},{target_y:.2f},{target_z:.2f}) "
+                f"err_xy={xy_error:.2f} err_z={error_z:.2f} "
+                f"z_floor={self.min_world_altitude:.2f} alt_mode={alt_mode} "
+                f"cmd_body=({cmd_body_x:.2f},{cmd_body_y:.2f},{linear_z:.2f}) "
+                f"cmd_world=({desired_vx_world:.2f},{desired_vy_world:.2f}) "
+                f"yaw_target={yaw_target:.2f} yaw_cmd={yaw_cmd:.2f} "
+                f"alt_recovery={altitude_recovery} ready={ready_now}"
+            )
+            self.last_follow_log_time = now
