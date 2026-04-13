@@ -69,7 +69,6 @@ def offset_goal_along_path(
     offset_distance: float,
 ) -> tuple[float, float, float]:
     """Shift the stopping target along the start->goal line by a fixed distance."""
-
     dx = float(world_goal[0]) - float(start_xyz[0])
     dy = float(world_goal[1]) - float(start_xyz[1])
     norm = math.hypot(dx, dy)
@@ -84,7 +83,7 @@ def offset_goal_along_path(
     )
 
 
-WORLD_SHARED_GOAL = (-248.1530, -82.4012, -1,3000)
+WORLD_SHARED_GOAL = (-248.1530, -82.4012, -1.3000)
 WORLD_HUSKY1_GOAL = WORLD_SHARED_GOAL
 WORLD_HUSKY2_GOAL = WORLD_SHARED_GOAL
 WORLD_UAV_GOAL = WORLD_SHARED_GOAL
@@ -131,10 +130,8 @@ UAV_Z_DEADBAND = 0.15
 UAV_YAW_DEADBAND = 0.18
 UAV_MIN_TRACK_SPEED = 0.0
 ENABLE_BAG_RECORDING = True
-# ENABLE_RVIZ = True
-# ENABLE_CAMERA_VIEW = True
-ENABLE_RVIZ = False
-ENABLE_CAMERA_VIEW = False
+ENABLE_RVIZ = True
+ENABLE_CAMERA_VIEW = True
 
 
 # Gazebo process and model-spawn helpers -------------------------------------
