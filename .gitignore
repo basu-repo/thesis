@@ -3,6 +3,7 @@ bags/
 data/
 results/
 rellis_like_dataset/
+hybrid_maneuver_dataset/
 
 # Runtime-generated model variants
 models/husky/model_red_tag.sdf
