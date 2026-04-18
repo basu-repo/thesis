@@ -17,8 +17,11 @@ from rosbags.typesys import Stores, get_typestore
 
 
 WORLD_NAME = "sim_world"
-BAGS_DIR = Path.home() / "Documents/Thesis/bags"
-OUT_ROOT = Path.home() / "Documents/Thesis/hybrid_maneuver_dataset"
+THESIS_ROOT = Path.home() / "Documents/Thesis"
+DATASET_ROOT = THESIS_ROOT / "03_dataset"
+BAGS_DIR = DATASET_ROOT / "bags"
+PREFERRED_EXTERNAL_OUT_ROOT = Path("/media/basudeo/1044063744061FD8/hybrid_maneuver_dataset")
+OUT_ROOT = PREFERRED_EXTERNAL_OUT_ROOT if PREFERRED_EXTERNAL_OUT_ROOT.exists() else DATASET_ROOT / "hybrid_maneuver_dataset"
 
 TOPICS = {
     "husky_local_odom": "/model/husky_local/odometry",

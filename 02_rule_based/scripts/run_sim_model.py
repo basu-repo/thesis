@@ -17,7 +17,7 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
 from controllers.episode_metadata import EpisodeMetadataPublisher
-from controllers.husky_model_driver_test import ModelHuskyDriver
+from controllers.husky_model_driver import ModelHuskyDriver
 from controllers.obstacle_detection import ObstacleDetectionNode
 from controllers.uav_follower import UavFollower
 from project_paths import MODELS_DIR, OMNET_DIR, RVIZ_CONFIG_PATH, WORLD_SDF_PATH
@@ -442,7 +442,7 @@ omnet = None
 if ENABLE_UAV:
     print("OMNeT++ relay disabled for this run.")
 
-BAG_DIR = os.path.expanduser("~/Documents/Thesis/bags")
+BAG_DIR = os.path.expanduser("~/Documents/Thesis/03_dataset/bags")
 os.makedirs(BAG_DIR, exist_ok=True)
 run_name = "run_model_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 bag_path = f"{BAG_DIR}/{run_name}"
