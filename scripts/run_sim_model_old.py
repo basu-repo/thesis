@@ -17,7 +17,7 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
 from controllers.episode_metadata import EpisodeMetadataPublisher
-from controllers.husky_model_driver_test import ModelHuskyDriver
+from controllers.husky_model_driver import ModelHuskyDriver
 from controllers.obstacle_detection import ObstacleDetectionNode
 from controllers.uav_follower import UavFollower
 from project_paths import MODELS_DIR, OMNET_DIR, RVIZ_CONFIG_PATH, WORLD_SDF_PATH
@@ -29,7 +29,7 @@ MODEL_PATH = str(MODELS_DIR)
 OMNET_BIN = OMNET_DIR / "onmetpp"
 OMNET_CONFIG = "WifiRelay"
 
-SPAWN_X, SPAWN_Y, SPAWN_Z = -273.6910, -103.7170, -0.4349
+SPAWN_X, SPAWN_Y, SPAWN_Z = -311.3400, -121.7800, -0.2387
 HUSKY2_X, HUSKY2_Y, HUSKY2_Z = SPAWN_X + 3.0, SPAWN_Y + 2.0, SPAWN_Z
 UAV_X, UAV_Y, UAV_Z = SPAWN_X + 6.0, SPAWN_Y - 4.0, SPAWN_Z + 4.0
 HUSKY1_SPAWN_YAW = math.pi
@@ -83,7 +83,7 @@ def offset_goal_along_path(
     )
 
 
-WORLD_SHARED_GOAL = (-324.5690, -31.8468, -1.5615)
+WORLD_SHARED_GOAL = (-230.0880, -35.9210, 0.2025)
 WORLD_HUSKY1_GOAL = WORLD_SHARED_GOAL
 WORLD_HUSKY2_GOAL = WORLD_SHARED_GOAL
 WORLD_UAV_GOAL = WORLD_SHARED_GOAL

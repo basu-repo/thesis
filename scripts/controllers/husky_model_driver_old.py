@@ -1,4 +1,4 @@
-"""Test Husky goal-seeking controller with stronger obstacle-avoidance turns."""
+"""Clean Husky goal-seeking controller with obstacle avoidance."""
 
 import math
 import time
@@ -55,8 +55,8 @@ class ModelHuskyDriver(Node):
         goal_align_heading_threshold: float = 0.5,
         goal_align_linear_speed: float = 0.45,
         obstacle_stop_distance: float = 1.8,
-        obstacle_turn_speed: float = 1.8,
-        obstacle_turn_speed_close: float = 2.4,
+        obstacle_turn_speed: float = 1.35,
+        obstacle_turn_speed_close: float = 1.8,
         stuck_timeout_seconds: float = 3.0,
         stuck_progress_distance: float = 0.15,
         stuck_min_command_speed: float = 0.2,
@@ -64,8 +64,6 @@ class ModelHuskyDriver(Node):
         stuck_reverse_seconds: float = 1.5,
         stuck_bootstrap_seconds: float = 2.0,
         stuck_cooldown_seconds: float = 4.0,
-        strict_reverse_distance: float = 0.95,
-        strict_reverse_cycles: int = 3,
         commit_clearance_distance: float = 3.5,
         commit_min_distance: float = 1.8,
         commit_linear_speed: float = 1.0,
@@ -110,8 +108,6 @@ class ModelHuskyDriver(Node):
         self.stuck_reverse_seconds = stuck_reverse_seconds
         self.stuck_bootstrap_seconds = stuck_bootstrap_seconds
         self.stuck_cooldown_seconds = stuck_cooldown_seconds
-        self.strict_reverse_distance = strict_reverse_distance
-        self.strict_reverse_cycles = max(1, int(strict_reverse_cycles))
         self.commit_clearance_distance = commit_clearance_distance
         self.commit_min_distance = commit_min_distance
         self.commit_linear_speed = commit_linear_speed
@@ -120,9 +116,7 @@ class ModelHuskyDriver(Node):
         self.reassess_pause_seconds = reassess_pause_seconds
         self.reassess_min_goal_progress = reassess_min_goal_progress
         self.reassess_cooldown_seconds = reassess_cooldown_seconds
-        # Let the test driver hold avoid turns longer so left/right labels are
-        # clearer and more visually distinct during scenario tuning.
-        self.turn_limit_radians = math.radians(110.0)
+        self.turn_limit_radians = math.pi / 2.0
 
         self.pub = self.create_publisher(Twist, self.cmd_topic, 10)
         self.state_pub = (
@@ -164,7 +158,6 @@ class ModelHuskyDriver(Node):
         self.last_command_angular_z = 0.0
         self.last_uav_wait_log = 0.0
         self.stuck_cooldown_until = 0.0
-        self.strict_blocked_cycles = 0
         self.start_time = time.monotonic()
 
         self.timer = self.create_timer(self.control_period, self.step)
@@ -400,27 +393,6 @@ class ModelHuskyDriver(Node):
             return False
         return self._obstacle_active() or self._front_clearance() <= (self.obstacle_stop_distance + 0.8)
 
-    def _should_strict_reverse(self, now: float, remaining: float | None) -> bool:
-        if remaining is None:
-            self.strict_blocked_cycles = 0
-            return False
-        if self.state in {"reverse", "recover"} or now < self.stuck_cooldown_until:
-            self.strict_blocked_cycles = 0
-            return False
-
-        front = self._front_clearance()
-        hard_blocked = self._obstacle_active() and front <= self.strict_reverse_distance
-        if not hard_blocked:
-            self.strict_blocked_cycles = 0
-            return False
-
-        # Count repeated control cycles with a near-contact obstacle ahead.
-        self.strict_blocked_cycles += 1
-        if self.strict_blocked_cycles < self.strict_reverse_cycles:
-            return False
-        self.strict_blocked_cycles = 0
-        return True
-
     def _goal_speed(self, remaining: float, heading_error: float) -> float:
         linear = clamp(self.cmd_linear_gain * remaining, self.min_linear_speed, self.max_linear_speed)
         abs_error = abs(heading_error)
@@ -509,13 +481,7 @@ class ModelHuskyDriver(Node):
         turned = abs(wrap_angle(current_heading - self.avoid_start_heading))
         front = self._front_clearance()
         sign = 1.0 if self.avoid_direction == "left" else -1.0
-        close_to_obstacle = front <= (self.obstacle_stop_distance + 0.8)
-        angular_speed = (
-            self.obstacle_turn_speed_close
-            if close_to_obstacle
-            else self.obstacle_turn_speed
-        )
-        angular_z = sign * angular_speed
+        angular_z = sign * self.obstacle_turn_speed_close
 
         if turned >= self.turn_limit_radians:
             if not self._obstacle_active():
@@ -526,20 +492,16 @@ class ModelHuskyDriver(Node):
             self._enter_reverse(now, remaining, "avoid_turn_limit")
             return (self.stuck_reverse_speed, 0.0)
 
-        if (
-            not self._obstacle_active()
-            and front > (self.obstacle_stop_distance + 1.2)
-            and turned > 0.55
-        ):
+        if not self._obstacle_active() and front > (self.obstacle_stop_distance + 0.7):
             self._enter_commit_forward(now, remaining)
             return self._commit_command()
 
         if front <= self.obstacle_stop_distance:
             linear_x = 0.0
         elif front <= (self.obstacle_stop_distance + 0.8):
-            linear_x = 0.10
+            linear_x = 0.18
         else:
-            linear_x = 0.22
+            linear_x = 0.35
         return (linear_x, angular_z)
 
     def step(self):
@@ -622,10 +584,10 @@ class ModelHuskyDriver(Node):
         if self.state == "commit_forward":
             traveled = self._commit_distance_traveled()
             front = self._front_clearance()
-            if self._obstacle_active() and front <= self.strict_reverse_distance:
+            if self._obstacle_active() and front <= self.obstacle_stop_distance:
                 self.commit_start_xy = None
-                self._enter_reverse(now, remaining, "commit_front_blocked_hard")
-                self.publish_cmd(self.stuck_reverse_speed, 0.0)
+                self._enter_avoid(now)
+                self.publish_cmd(*self._avoid_command(now, remaining))
                 return
             if traveled >= self.commit_min_distance and front >= self.commit_clearance_distance:
                 self.commit_start_xy = None
@@ -641,11 +603,6 @@ class ModelHuskyDriver(Node):
                 self.publish_cmd(*self._bootstrap_command())
                 return
             self._enter_state("go_to_goal")
-
-        if self._should_strict_reverse(now, remaining):
-            self._enter_reverse(now, remaining, "front_blocked_hard")
-            self.publish_cmd(self.stuck_reverse_speed, 0.0)
-            return
 
         if self._obstacle_active() and self.state != "avoid":
             self._enter_avoid(now)
