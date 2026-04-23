@@ -42,21 +42,21 @@ class ModelHuskyDriver(Node):
         goal_xyz: tuple[float, float, float] | None = None,
         world_goal_xyz: tuple[float, float, float] | None = None,
         bootstrap_seconds: float = 3.0,
-        bootstrap_linear_speed: float = 0.45,
+        bootstrap_linear_speed: float = 0.30,
         bootstrap_turn_gain: float = 1.0,
         control_period: float = 0.1,
-        cmd_linear_gain: float = 0.9,
+        cmd_linear_gain: float = 0.65,
         cmd_angular_gain: float = 1.6,
         min_linear_speed: float = 0.0,
-        max_linear_speed: float = 0.9,
+        max_linear_speed: float = 0.55,
         max_angular_speed: float = 1.2,
         heading_deadband: float = 0.08,
         goal_tolerance: float = 1.5,
         goal_align_heading_threshold: float = 0.5,
-        goal_align_linear_speed: float = 0.45,
+        goal_align_linear_speed: float = 0.28,
         obstacle_stop_distance: float = 1.8,
-        obstacle_turn_speed: float = 1.8,
-        obstacle_turn_speed_close: float = 2.4,
+        obstacle_turn_speed: float = 1.0,
+        obstacle_turn_speed_close: float = 1.4,
         stuck_timeout_seconds: float = 3.0,
         stuck_progress_distance: float = 0.15,
         stuck_min_command_speed: float = 0.2,
@@ -64,15 +64,22 @@ class ModelHuskyDriver(Node):
         stuck_reverse_seconds: float = 1.5,
         stuck_bootstrap_seconds: float = 2.0,
         stuck_cooldown_seconds: float = 4.0,
-        strict_reverse_distance: float = 0.95,
-        strict_reverse_cycles: int = 3,
-        commit_clearance_distance: float = 3.5,
+        strict_reverse_distance: float = 0.80,
+        strict_reverse_cycles: int = 4,
+        commit_clearance_distance: float = 4.8,
         commit_min_distance: float = 1.8,
-        commit_linear_speed: float = 1.0,
-        commit_max_angular_speed: float = 0.35,
-        reassess_timeout_seconds: float = 2.5,
-        reassess_pause_seconds: float = 0.8,
-        reassess_min_goal_progress: float = 0.35,
+        commit_linear_speed: float = 0.45,
+        commit_max_angular_speed: float = 0.25,
+        commit_clear_hold_seconds: float = 1.5,
+        post_avoid_forward_speed: float = 0.18,
+        post_avoid_forward_seconds: float = 0.8,
+        post_recover_commit_cooldown_seconds: float = 2.0,
+        reverse_loop_window_seconds: float = 12.0,
+        reverse_loop_limit: int = 2,
+        loop_reassess_pause_seconds: float = 2.5,
+        reassess_timeout_seconds: float = 5.0,
+        reassess_pause_seconds: float = 1.5,
+        reassess_min_goal_progress: float = 0.12,
         reassess_cooldown_seconds: float = 1.5,
     ):
         super().__init__(node_name)
@@ -116,6 +123,13 @@ class ModelHuskyDriver(Node):
         self.commit_min_distance = commit_min_distance
         self.commit_linear_speed = commit_linear_speed
         self.commit_max_angular_speed = commit_max_angular_speed
+        self.commit_clear_hold_seconds = commit_clear_hold_seconds
+        self.post_avoid_forward_speed = post_avoid_forward_speed
+        self.post_avoid_forward_seconds = post_avoid_forward_seconds
+        self.post_recover_commit_cooldown_seconds = post_recover_commit_cooldown_seconds
+        self.reverse_loop_window_seconds = reverse_loop_window_seconds
+        self.reverse_loop_limit = max(1, int(reverse_loop_limit))
+        self.loop_reassess_pause_seconds = loop_reassess_pause_seconds
         self.reassess_timeout_seconds = reassess_timeout_seconds
         self.reassess_pause_seconds = reassess_pause_seconds
         self.reassess_min_goal_progress = reassess_min_goal_progress
@@ -165,6 +179,9 @@ class ModelHuskyDriver(Node):
         self.last_uav_wait_log = 0.0
         self.stuck_cooldown_until = 0.0
         self.strict_blocked_cycles = 0
+        self.clear_path_since = None
+        self.post_recover_until = 0.0
+        self.reverse_events = deque(maxlen=8)
         self.start_time = time.monotonic()
 
         self.timer = self.create_timer(self.control_period, self.step)
@@ -331,9 +348,11 @@ class ModelHuskyDriver(Node):
         )
 
     def _enter_reassess(self, now: float, remaining: float, reason: str):
-        self._enter_state("reassess", now + self.reassess_pause_seconds)
+        pause_seconds = self.loop_reassess_pause_seconds if reason == "loop_guard" else self.reassess_pause_seconds
+        self._enter_state("reassess", now + pause_seconds)
         self.remaining_history.clear()
         self.remaining_history.append((now, float(remaining)))
+        self.clear_path_since = None
         self.get_logger().info(
             f"Reassessing navigation: reason={reason} remaining={remaining:.3f}"
         )
@@ -343,6 +362,7 @@ class ModelHuskyDriver(Node):
         self.commit_start_xy = None if current_xy is None else (float(current_xy[0]), float(current_xy[1]))
         self.avoid_direction = None
         self.avoid_start_heading = None
+        self.clear_path_since = None
         self._enter_state("commit_forward")
         self.remaining_history.clear()
         self.remaining_history.append((now, float(remaining)))
@@ -356,6 +376,8 @@ class ModelHuskyDriver(Node):
     def _enter_reverse(self, now: float, remaining: float, reason: str):
         self._enter_state("reverse", now + self.stuck_reverse_seconds)
         self.stuck_cooldown_until = now + self.stuck_reverse_seconds + self.stuck_cooldown_seconds
+        self.clear_path_since = None
+        self.reverse_events.append(float(now))
         self.remaining_history.clear()
         self.remaining_history.append((now, float(remaining)))
         self.get_logger().info(
@@ -366,6 +388,8 @@ class ModelHuskyDriver(Node):
 
     def _should_reassess(self, now: float, remaining: float | None) -> bool:
         if remaining is None or self._obstacle_active():
+            return False
+        if remaining <= max(self.goal_tolerance + 1.0, 2.5):
             return False
         if self.state == "reassess" or now < self.state_until:
             return False
@@ -398,7 +422,13 @@ class ModelHuskyDriver(Node):
         goal_progress = reference[1] - remaining
         if goal_progress >= self.stuck_progress_distance:
             return False
-        return self._obstacle_active() or self._front_clearance() <= (self.obstacle_stop_distance + 0.8)
+        front = self._front_clearance()
+        # Do not reverse just because progress is slow when the path ahead is
+        # effectively clear. In those cases, let the controller reassess/pause
+        # instead of backing up unexpectedly.
+        if not self._obstacle_active():
+            return False
+        return front <= self.obstacle_stop_distance
 
     def _should_strict_reverse(self, now: float, remaining: float | None) -> bool:
         if remaining is None:
@@ -421,6 +451,11 @@ class ModelHuskyDriver(Node):
         self.strict_blocked_cycles = 0
         return True
 
+    def _reverse_loop_detected(self, now: float) -> bool:
+        while self.reverse_events and (now - self.reverse_events[0]) > self.reverse_loop_window_seconds:
+            self.reverse_events.popleft()
+        return len(self.reverse_events) >= self.reverse_loop_limit
+
     def _goal_speed(self, remaining: float, heading_error: float) -> float:
         linear = clamp(self.cmd_linear_gain * remaining, self.min_linear_speed, self.max_linear_speed)
         abs_error = abs(heading_error)
@@ -434,9 +469,9 @@ class ModelHuskyDriver(Node):
             linear *= 0.80
 
         if remaining < 2.0:
-            linear = min(linear, 0.9)
+            linear = min(linear, 0.35)
         if remaining < 1.0:
-            linear = min(linear, 0.45)
+            linear = min(linear, 0.20)
         return max(0.0, linear)
 
     def _commit_distance_traveled(self) -> float:
@@ -517,22 +552,32 @@ class ModelHuskyDriver(Node):
         )
         angular_z = sign * angular_speed
 
+        # Once the front clears, keep a short straight escape move before
+        # resuming goal-seeking. This prevents the robot from immediately
+        # "unturning" back toward the goal while it is still beside the obstacle.
+        if not self._obstacle_active() and front > (self.obstacle_stop_distance + 0.5):
+            if self.clear_path_since is None:
+                self.clear_path_since = now
+            elif (now - self.clear_path_since) >= self.post_avoid_forward_seconds:
+                self.avoid_direction = None
+                self.avoid_start_heading = None
+                self.clear_path_since = None
+                self._enter_state("go_to_goal")
+                return self._goal_command()
+            return (self.post_avoid_forward_speed, 0.0)
+        self.clear_path_since = None
+
         if turned >= self.turn_limit_radians:
             if not self._obstacle_active():
                 self.avoid_direction = None
                 self.avoid_start_heading = None
+                self.clear_path_since = None
                 self._enter_state("go_to_goal")
                 return self._goal_command()
             self._enter_reverse(now, remaining, "avoid_turn_limit")
             return (self.stuck_reverse_speed, 0.0)
 
-        if (
-            not self._obstacle_active()
-            and front > (self.obstacle_stop_distance + 1.2)
-            and turned > 0.55
-        ):
-            self._enter_commit_forward(now, remaining)
-            return self._commit_command()
+        self.clear_path_since = None
 
         if front <= self.obstacle_stop_distance:
             linear_x = 0.0
@@ -617,7 +662,14 @@ class ModelHuskyDriver(Node):
                 return
             self.remaining_history.clear()
             self.remaining_history.append((now, float(remaining)))
+            self.post_recover_until = now + self.post_recover_commit_cooldown_seconds
+            self.clear_path_since = None
             self._enter_state("go_to_goal")
+
+        if self._reverse_loop_detected(now):
+            self._enter_reassess(now, remaining, "loop_guard")
+            self.publish_cmd(0.0, 0.0)
+            return
 
         if self.state == "commit_forward":
             traveled = self._commit_distance_traveled()

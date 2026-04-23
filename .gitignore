@@ -4,6 +4,23 @@ data/
 results/
 rellis_like_dataset/
 hybrid_maneuver_dataset/
+03_dataset/husky_control_dataset/
+03_dataset/hybrid_maneuvers_dataset/
+03_dataset/bags/
+04_model_evaluation/results/
+04_model_evaluation/plots/
+04_model_evaluation/comparison_exports/
+04_model_evaluation/model_weights/
+05_final_eval_sim/logs/
+05_final_eval_sim/output/
+
+# Generated analysis artifacts
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
 
 # Runtime-generated model variants
 models/husky/model_red_tag.sdf
@@ -11,6 +28,7 @@ models/husky/model_blue_tag.sdf
 
 # Python bytecode
 *.pyc
+*.pyo
 **/__pycache__/
 .ipynb_checkpoints/
 

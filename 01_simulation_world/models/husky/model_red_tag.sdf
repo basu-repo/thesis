@@ -1051,7 +1051,7 @@
 	<right_joint>rear_right_wheel_joint</right_joint>
 	<wheel_separation>0.57</wheel_separation>
 	<wheel_radius>0.165</wheel_radius>
-	<topic>/cmd_vel_husky2</topic>
+	<topic>/cmd_vel</topic>
     </plugin>
     
   
@@ -1063,7 +1063,7 @@
     </plugin>
 
   
-    <link name="flag_marker_blue">
+    <link name="flag_marker_red">
       <pose>0 0 0.32 0 0 0</pose>
       <collision name="collision">
         <geometry>
@@ -1081,15 +1081,15 @@
           </cylinder>
         </geometry>
         <material>
-          <ambient>0.12 0.36 0.95 1.0</ambient>
-          <diffuse>0.12 0.36 0.95 1.0</diffuse>
-          <emissive>0.048 0.144 0.38 1.0</emissive>
+          <ambient>0.95 0.12 0.12 1.0</ambient>
+          <diffuse>0.95 0.12 0.12 1.0</diffuse>
+          <emissive>0.38 0.048 0.048 1.0</emissive>
         </material>
       </visual>
     </link>
-    <joint name="flag_marker_blue_joint" type="fixed">
+    <joint name="flag_marker_red_joint" type="fixed">
       <parent>base_link</parent>
-      <child>flag_marker_blue</child>
+      <child>flag_marker_red</child>
     </joint>
 
   </model>

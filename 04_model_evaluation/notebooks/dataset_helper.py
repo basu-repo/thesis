@@ -54,6 +54,8 @@ PLATFORM_ONEHOT = {
     "UAV": [0.0, 1.0],
 }
 
+DEFAULT_EXTERNAL_DATASET_ROOT = Path.home() / "Documents/Thesis/03_dataset/husky_control_dataset"
+
 DATASET_ROOT: Path | None = None
 ORIGINAL_DATASET_ROOT: Path | None = None
 RESULTS_ROOT: Path | None = None
@@ -113,10 +115,41 @@ def build_label_mapping(label_mode: str):
     return labels, mapping
 
 
+def _frame_files_under(root: Path) -> list[Path]:
+    if (root / "frames.jsonl").exists():
+        return [root / "frames.jsonl"]
+    return sorted(root.glob("*/frames.jsonl"))
+
+
 def discover_frame_files(dataset_root: Path):
-    if (dataset_root / "frames.jsonl").exists():
-        return [dataset_root / "frames.jsonl"]
-    return sorted(dataset_root.glob("*/frames.jsonl"))
+    """Find extracted frame files, preferring the requested root but falling back safely.
+
+    Some notebooks may still carry a stale local `DATASET_ROOT` even though the actual
+    extracted data lives on the external drive. To keep the workflow resilient after
+    kernel restarts or old notebook outputs, we try a few sensible roots in order.
+    """
+    candidate_roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def add_candidate(path: Path | None) -> None:
+        if path is None:
+            return
+        path = Path(path)
+        if path in seen:
+            return
+        seen.add(path)
+        candidate_roots.append(path)
+
+    add_candidate(Path(dataset_root))
+    add_candidate(DATASET_ROOT)
+    add_candidate(ORIGINAL_DATASET_ROOT)
+    add_candidate(DEFAULT_EXTERNAL_DATASET_ROOT)
+
+    for root in candidate_roots:
+        frame_files = _frame_files_under(root)
+        if frame_files:
+            return frame_files
+    return []
 
 
 def remap_dataset_path(path_str: str) -> Path:
@@ -127,8 +160,27 @@ def remap_dataset_path(path_str: str) -> Path:
     try:
         rel = path.relative_to(original_dataset_root)
     except ValueError:
+        parts = path.parts
+        for dataset_marker in ("hybrid_maneuvers_dataset", "husky_control_dataset"):
+            if dataset_marker in parts:
+                marker = parts.index(dataset_marker)
+                rel = Path(*parts[marker + 1 :])
+                candidate = dataset_root / rel
+                if candidate.exists():
+                    return candidate
+                if DEFAULT_EXTERNAL_DATASET_ROOT != dataset_root:
+                    fallback_candidate = DEFAULT_EXTERNAL_DATASET_ROOT / rel
+                    if fallback_candidate.exists():
+                        return fallback_candidate
         return path
-    return dataset_root / rel
+    candidate = dataset_root / rel
+    if candidate.exists():
+        return candidate
+    if DEFAULT_EXTERNAL_DATASET_ROOT != dataset_root:
+        fallback_candidate = DEFAULT_EXTERNAL_DATASET_ROOT / rel
+        if fallback_candidate.exists():
+            return fallback_candidate
+    return candidate
 
 
 @lru_cache(maxsize=32768)
@@ -189,6 +241,31 @@ def build_edge_lookup(frame: dict):
     return {(edge["source"], edge["target"]): edge for edge in frame["edges"]}
 
 
+def frame_scan_ref(frame: dict):
+    if "modalities" in frame:
+        return frame["modalities"].get("ego_planar_scan")
+    if "observation" in frame:
+        return frame["observation"].get("ego_planar_scan")
+    return None
+
+
+def frame_state(frame: dict):
+    if "agents" in frame:
+        return frame["agents"][frame["ego_id"]]["state"]
+    return frame.get("state")
+
+
+def frame_teacher_label(frame: dict):
+    teacher = frame.get("teacher", {})
+    label = teacher.get("label")
+    if label is not None:
+        return str(label)
+    controller_state = teacher.get("controller_state")
+    if controller_state:
+        return str(controller_state)
+    return "go_to_goal"
+
+
 def edge_features_for_order(frame: dict, order: list[str]):
     edge_map = build_edge_lookup(frame)
     src_edges = []
@@ -215,19 +292,22 @@ def edge_features_for_order(frame: dict, order: list[str]):
     return src_edges
 
 
-def group_streams(dataset_root: Path, allowed_labels: set[str], label_mapping: dict):
+def group_streams(dataset_root: Path, allowed_labels: set[str] | None = None, label_mapping: dict | None = None):
     streams = []
-    for frames_path in discover_frame_files(dataset_root):
+    frame_files = discover_frame_files(dataset_root)
+    allowed_labels = set(allowed_labels) if allowed_labels is not None else None
+    label_mapping = label_mapping or {}
+    for frames_path in frame_files:
         with frames_path.open() as f:
             rows = [json.loads(line) for line in f if line.strip()]
 
         buckets = {}
         for row in rows:
-            raw_label = str(row["teacher"]["label"])
+            raw_label = frame_teacher_label(row)
             mapped_label = label_mapping.get(raw_label, raw_label)
-            if mapped_label is None or mapped_label not in allowed_labels:
+            if allowed_labels is not None and (mapped_label is None or mapped_label not in allowed_labels):
                 continue
-            if row["modalities"].get("ego_planar_scan") is None:
+            if frame_scan_ref(row) is None:
                 continue
             row = dict(row)
             row["teacher"] = dict(row["teacher"])
@@ -242,7 +322,10 @@ def group_streams(dataset_root: Path, allowed_labels: set[str], label_mapping: d
                 streams.append(stream)
 
     if not streams:
-        raise RuntimeError(f"No usable frame streams found under {dataset_root}")
+        raise RuntimeError(
+            f"No usable frame streams found under {dataset_root}. "
+            f"Discovered {len(frame_files)} frame file(s); check label filtering and dataset paths."
+        )
     return streams
 
 
@@ -253,13 +336,13 @@ def build_sample_table(streams: list[list[dict]], past_len: int, future_len: int
         for start in range(max(0, usable)):
             anchor = stream[start + past_len - 1]
             future_frames = stream[start + past_len : start + past_len + future_len]
-            anchor_state = anchor["agents"][anchor["ego_id"]]["state"]
+            anchor_state = frame_state(anchor)
             anchor_ts = int(anchor["timestamp_ns"])
 
             future_xy = []
             future_dt = []
             for future_frame in future_frames:
-                state = future_frame["agents"][anchor["ego_id"]]["state"]
+                state = frame_state(future_frame)
                 future_xy.append(
                     [
                         float(state["x"] - anchor_state["x"]),
@@ -277,7 +360,7 @@ def build_sample_table(streams: list[list[dict]], past_len: int, future_len: int
                     "start": start,
                     "anchor_index": start + past_len - 1,
                     "ego_id": anchor["ego_id"],
-                    "label": anchor["teacher"]["label"],
+                    "label": anchor["teacher"].get("label"),
                     "raw_label": anchor["teacher"]["raw_label"],
                     "future_xy": future_xy,
                     "future_dt": future_dt,
@@ -298,7 +381,14 @@ def save_or_load_fixed_split(
     if split_path.exists():
         with split_path.open() as f:
             split_info = json.load(f)
-        return split_info
+        current_sample_ids = [row["sample_id"] for row in sample_table]
+        if (
+            split_info.get("sample_count") == len(sample_table)
+            and split_info.get("past_len") == past_len
+            and split_info.get("future_len") == future_len
+            and split_info.get("sample_ids") == current_sample_ids
+        ):
+            return split_info
 
     rng = random.Random(seed)
     indices = list(range(len(sample_table)))

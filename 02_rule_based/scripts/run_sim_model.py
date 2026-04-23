@@ -10,8 +10,15 @@ import math
 import os
 import signal
 import subprocess
+import sys
 import time
+from contextlib import suppress
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+RULE_BASED_ROOT = SCRIPT_DIR.parent
+if str(RULE_BASED_ROOT) not in sys.path:
+    sys.path.insert(0, str(RULE_BASED_ROOT))
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
@@ -24,13 +31,77 @@ from project_paths import MODELS_DIR, OMNET_DIR, RVIZ_CONFIG_PATH, WORLD_SDF_PAT
 
 
 WORLD = str(WORLD_SDF_PATH)
-WORLD_NAME = "sim_world"
+WORLD_NAME = "baylands"
 MODEL_PATH = str(MODELS_DIR)
 OMNET_BIN = OMNET_DIR / "onmetpp"
 OMNET_CONFIG = "WifiRelay"
+RUN_START_DT = datetime.datetime.now()
+LOG_DIR = Path.home() / "Documents/Thesis/03_dataset/logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+RUN_LOG_PATH = LOG_DIR / f"rule_based_run_{RUN_START_DT.strftime('%Y%m%d_%H%M%S')}.log"
+TEE_PROCESS = None
+ORIGINAL_STDOUT_FD = None
+ORIGINAL_STDERR_FD = None
 
-SPAWN_X, SPAWN_Y, SPAWN_Z = -273.6910, -103.7170, -0.4349
-HUSKY2_X, HUSKY2_Y, HUSKY2_Z = SPAWN_X + 3.0, SPAWN_Y + 2.0, SPAWN_Z
+
+def setup_terminal_tee(log_path: Path):
+    global TEE_PROCESS, ORIGINAL_STDOUT_FD, ORIGINAL_STDERR_FD
+    if TEE_PROCESS is not None:
+        return
+
+    ORIGINAL_STDOUT_FD = os.dup(sys.__stdout__.fileno())
+    ORIGINAL_STDERR_FD = os.dup(sys.__stderr__.fileno())
+    TEE_PROCESS = subprocess.Popen(
+        ["tee", "-a", str(log_path)],
+        stdin=subprocess.PIPE,
+        stdout=ORIGINAL_STDOUT_FD,
+        stderr=ORIGINAL_STDERR_FD,
+        bufsize=0,
+    )
+    os.dup2(TEE_PROCESS.stdin.fileno(), sys.__stdout__.fileno())
+    os.dup2(TEE_PROCESS.stdin.fileno(), sys.__stderr__.fileno())
+
+
+def close_terminal_tee():
+    global TEE_PROCESS, ORIGINAL_STDOUT_FD, ORIGINAL_STDERR_FD
+    if TEE_PROCESS is None:
+        return
+
+    with suppress(Exception):
+        sys.stdout.flush()
+    with suppress(Exception):
+        sys.stderr.flush()
+    if ORIGINAL_STDOUT_FD is not None:
+        with suppress(Exception):
+            os.dup2(ORIGINAL_STDOUT_FD, sys.__stdout__.fileno())
+    if ORIGINAL_STDERR_FD is not None:
+        with suppress(Exception):
+            os.dup2(ORIGINAL_STDERR_FD, sys.__stderr__.fileno())
+    with suppress(Exception):
+        if TEE_PROCESS.stdin is not None:
+            TEE_PROCESS.stdin.close()
+    with suppress(Exception):
+        TEE_PROCESS.wait(timeout=2.0)
+    if ORIGINAL_STDOUT_FD is not None:
+        with suppress(Exception):
+            os.close(ORIGINAL_STDOUT_FD)
+    if ORIGINAL_STDERR_FD is not None:
+        with suppress(Exception):
+            os.close(ORIGINAL_STDERR_FD)
+    TEE_PROCESS = None
+    ORIGINAL_STDOUT_FD = None
+    ORIGINAL_STDERR_FD = None
+
+
+def log_event(message: str):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] {message}"
+    print(line)
+    with suppress(Exception):
+        sys.stdout.flush()
+
+SPAWN_X, SPAWN_Y, SPAWN_Z = 84.6951, 24.1579, 0.6490
+HUSKY2_X, HUSKY2_Y, HUSKY2_Z = 90.6728, 15.5194, 0.6490
 UAV_X, UAV_Y, UAV_Z = SPAWN_X + 6.0, SPAWN_Y - 4.0, SPAWN_Z + 4.0
 HUSKY1_SPAWN_YAW = math.pi
 HUSKY2_SPAWN_YAW = HUSKY1_SPAWN_YAW
@@ -83,7 +154,16 @@ def offset_goal_along_path(
     )
 
 
-WORLD_SHARED_GOAL = (-324.5690, -31.8468, -1.5615)
+# Base goal from the longer Baylands route. We pull it slightly back toward
+# the spawn so rule-based collection finishes a bit sooner while keeping the
+# same general path geometry.
+RAW_WORLD_SHARED_GOAL = (-54.4904, -96.9701, -0.2737)
+GOAL_WORLD_PULLBACK = 13.0
+WORLD_SHARED_GOAL = offset_goal_along_path(
+    RAW_WORLD_SHARED_GOAL,
+    (SPAWN_X, SPAWN_Y, SPAWN_Z),
+    -GOAL_WORLD_PULLBACK,
+)
 WORLD_HUSKY1_GOAL = WORLD_SHARED_GOAL
 WORLD_HUSKY2_GOAL = WORLD_SHARED_GOAL
 WORLD_UAV_GOAL = WORLD_SHARED_GOAL
@@ -94,6 +174,7 @@ BOOTSTRAP_SECONDS = 3.0
 BOOTSTRAP_LINEAR_SPEED = 0.8
 ENABLE_SECOND_HUSKY = True
 ENABLE_UAV = True
+DEBUG_ISOLATE_HUSKY_LOCAL = False
 
 CONTROL_PERIOD = 0.1
 CMD_LINEAR_GAIN = 1.45
@@ -108,8 +189,8 @@ STUCK_PROGRESS_DISTANCE = 0.15
 STUCK_REVERSE_SPEED = -0.8
 STUCK_REVERSE_SECONDS = 2.0
 STUCK_BOOTSTRAP_SECONDS = 2.0
-OBSTACLE_FRONT_HALF_ANGLE_DEG = 30.0
-OBSTACLE_SIDE_ANGLE_DEG = 90.0
+OBSTACLE_FRONT_HALF_ANGLE_DEG = 45.0
+OBSTACLE_SIDE_ANGLE_DEG = 65.0
 OBSTACLE_STOP_DISTANCE = 1.8
 OBSTACLE_CAUTION_DISTANCE = 3.2
 
@@ -130,8 +211,13 @@ UAV_Z_DEADBAND = 0.15
 UAV_YAW_DEADBAND = 0.18
 UAV_MIN_TRACK_SPEED = 0.0
 ENABLE_BAG_RECORDING = True
-ENABLE_RVIZ = True
-ENABLE_CAMERA_VIEW = True
+ENABLE_RVIZ = False
+ENABLE_CAMERA_VIEW = False
+
+if DEBUG_ISOLATE_HUSKY_LOCAL:
+    ENABLE_SECOND_HUSKY = False
+    ENABLE_UAV = False
+    ENABLE_BAG_RECORDING = True
 
 
 # Gazebo process and model-spawn helpers -------------------------------------
@@ -210,21 +296,12 @@ def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float
     <static>true</static>
     <pose>{xyz[0]} {xyz[1]} {xyz[2]} 0 0 0</pose>
     <link name="marker_link">
-      <collision name="marker_collision">
-        <pose>0 0 1.25 0 0 0</pose>
-        <geometry>
-          <cylinder>
-            <radius>0.08</radius>
-            <length>2.5</length>
-          </cylinder>
-        </geometry>
-      </collision>
       <visual name="marker_visual">
-        <pose>0 0 1.25 0 0 0</pose>
+        <pose>0 0 1.0 0 0 0</pose>
         <geometry>
           <cylinder>
             <radius>0.08</radius>
-            <length>2.5</length>
+            <length>5.0</length>
           </cylinder>
         </geometry>
         <material>
@@ -278,31 +355,74 @@ def husky_sensor_bridge_topics(world_name: str, model_name: str) -> list[str]:
     return topics
 
 
+def build_bag_topics(world_name: str, *, include_second_husky: bool, include_uav: bool) -> list[str]:
+    """Return the smallest useful topic set for trajectory-focused dataset collection."""
+
+    topics = [
+        "/clock",
+        f"/world/{world_name}/dynamic_pose/info",
+        "/cmd_vel",
+        "/husky_local/controller_state",
+        "/husky_local/obstacle_action",
+        "/husky_local/obstacle_clearance",
+        "/episode/husky_local/start",
+        "/episode/husky_local/goal",
+        "/model/husky_local/odometry",
+        f"/world/{world_name}/model/husky_local/link/base_link/sensor/planar_laser/scan",
+        f"/world/{world_name}/model/husky_local/link/base_link/sensor/front_laser/scan/points",
+        f"/world/{world_name}/model/husky_local/link/base_link/sensor/imu_sensor/imu",
+    ]
+
+    if include_second_husky:
+        topics.extend(
+            [
+                "/cmd_vel_husky2",
+                "/husky_2/controller_state",
+                "/husky_2/obstacle_action",
+                "/husky_2/obstacle_clearance",
+                "/episode/husky_2/start",
+                "/episode/husky_2/goal",
+                "/model/husky_2/odometry",
+                f"/world/{world_name}/model/husky_2/link/base_link/sensor/planar_laser/scan",
+                f"/world/{world_name}/model/husky_2/link/base_link/sensor/front_laser/scan/points",
+                f"/world/{world_name}/model/husky_2/link/base_link/sensor/imu_sensor/imu",
+            ]
+        )
+
+    if include_uav:
+        topics.extend(
+            [
+                "/episode/uav1/start",
+                "/episode/uav1/goal",
+                "/model/uav1/odometry",
+                f"/world/{world_name}/model/uav1/link/base_link/sensor/front_laser/scan/points",
+                f"/world/{world_name}/model/uav1/link/base_link/sensor/imu_sensor/imu",
+                f"/world/{world_name}/model/uav1/link/base_link/sensor/air_pressure/air_pressure",
+                f"/world/{world_name}/model/uav1/link/base_link/sensor/magnetometer/magnetometer",
+            ]
+        )
+
+    return topics
+
+
 os.environ["IGN_GAZEBO_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("IGN_GAZEBO_RESOURCE_PATH", "")
 os.environ["GZ_SIM_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("GZ_SIM_RESOURCE_PATH", "")
 
+setup_terminal_tee(RUN_LOG_PATH)
 subprocess.run(["bash", "-c", "pkill -f ros_gz_bridge || true"])
 subprocess.run(["bash", "-c", "pkill -f ign || true"])
 subprocess.run(["bash", "-c", f"pkill -f {OMNET_BIN} || true"])
 
-print("Starting Gazebo...")
+log_event(f"START timestamp: {RUN_START_DT.isoformat(timespec='seconds')}")
+log_event(f"Run log file: {RUN_LOG_PATH}")
+log_event("Starting Gazebo...")
 gz = run_bg(f"ign gazebo {WORLD}")
 time.sleep(5)
 
-print("Spawning Baylands terrain...")
-spawn_baylands = f"""
-ign service -s /world/{WORLD_NAME}/create \
---reqtype ignition.msgs.EntityFactory \
---reptype ignition.msgs.Boolean \
---timeout 5000 \
---req 'sdf_filename: "model://baylands/model.sdf", name: "baylands"'
-"""
-subprocess.run(["bash", "-c", spawn_baylands])
-
-print("Waiting for terrain to fully load...")
+log_event("Waiting for Baylands world to fully load...")
 time.sleep(40)
 
-print("Spawning Husky...")
+log_event("Spawning Husky...")
 husky1_sdf_path = write_husky_variant(
     MODELS_DIR / "husky" / "model_red_tag.sdf",
     "/cmd_vel",
@@ -330,7 +450,7 @@ subprocess.run(["bash", "-c", spawn_husky])
 time.sleep(5)
 
 if ENABLE_SECOND_HUSKY:
-    print("Spawning Husky 2...")
+    log_event("Spawning Husky 2...")
     husky2_sdf_path = write_husky_variant(
         MODELS_DIR / "husky" / "model_red_tag.sdf",
         "/cmd_vel_husky2",
@@ -350,7 +470,7 @@ if ENABLE_SECOND_HUSKY:
     time.sleep(5)
 
 if ENABLE_UAV:
-    print("Spawning UAV...")
+    log_event("Spawning UAV...")
     spawn_uav = """
 ign service -s /world/{world_name}/create \
 --reqtype ignition.msgs.EntityFactory \
@@ -369,7 +489,7 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
     subprocess.run(["bash", "-c", spawn_uav])
     time.sleep(5)
 
-print("Spawning goal markers...")
+log_event("Spawning goal markers...")
 # spawn_goal_marker(WORLD_NAME, "start_husky_local", (SPAWN_X, SPAWN_Y, 0.0387), (0.65, 0.15, 0.15, 1.0))
 spawn_goal_marker(WORLD_NAME, "goal_husky_local", (WORLD_HUSKY1_GOAL[0], WORLD_HUSKY1_GOAL[1], GROUND_MARKER_Z), (0.95, 0.12, 0.12, 1.0))
 if ENABLE_SECOND_HUSKY:
@@ -378,7 +498,7 @@ if ENABLE_UAV:
     spawn_goal_marker(WORLD_NAME, "goal_uav1", (WORLD_UAV_GOAL[0], WORLD_UAV_GOAL[1], GROUND_MARKER_Z), (0.95, 0.85, 0.12, 1.0))
 time.sleep(1)
 
-print("Starting bridge...")
+log_event("Starting bridge...")
 bridge_topics = [
     "/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist",
     "/model/husky_local/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
@@ -421,7 +541,7 @@ rviz = None
 camera_view = None
 
 if ENABLE_RVIZ:
-    print(f"Starting RViz with config: {RVIZ_CONFIG_PATH}")
+    log_event(f"Starting RViz with config: {RVIZ_CONFIG_PATH}")
     rviz_cmd = (
         "source /opt/ros/humble/setup.bash && "
         f"rviz2 -d {RVIZ_CONFIG_PATH}"
@@ -430,7 +550,7 @@ if ENABLE_RVIZ:
     time.sleep(2)
 
 if ENABLE_CAMERA_VIEW:
-    print("Starting camera viewer...")
+    log_event("Starting camera viewer...")
     camera_cmd = (
         "source /opt/ros/humble/setup.bash && "
         "ros2 run rqt_image_view rqt_image_view"
@@ -440,7 +560,7 @@ if ENABLE_CAMERA_VIEW:
 
 omnet = None
 if ENABLE_UAV:
-    print("OMNeT++ relay disabled for this run.")
+    log_event("OMNeT++ relay disabled for this run.")
 
 BAG_DIR = os.path.expanduser("~/Documents/Thesis/03_dataset/bags")
 os.makedirs(BAG_DIR, exist_ok=True)
@@ -448,50 +568,33 @@ run_name = "run_model_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 bag_path = f"{BAG_DIR}/{run_name}"
 recorder = None
 if ENABLE_BAG_RECORDING:
-    print("Recording bag:", bag_path)
+    bag_topics = build_bag_topics(
+        WORLD_NAME,
+        include_second_husky=ENABLE_SECOND_HUSKY,
+        include_uav=ENABLE_UAV,
+    )
+    log_event(f"Recording bag: {bag_path}")
+    log_event(
+        "Bag topic set for trajectory collection: "
+        + ", ".join(bag_topics)
+    )
     record_cmd = (
         "source /opt/ros/humble/setup.bash && "
         f"ros2 bag record -o {bag_path} "
-        "/cmd_vel "
-        "/cmd_vel_husky2 "
-        "/husky_local/controller_state "
-        "/husky_2/controller_state "
-        "/husky_local/obstacle_action "
-        "/husky_2/obstacle_action "
-        "/husky_local/obstacle_clearance "
-        "/husky_2/obstacle_clearance "
-        "/episode/husky_local/start "
-        "/episode/husky_local/goal "
-        "/episode/husky_2/start "
-        "/episode/husky_2/goal "
-        "/episode/uav1/start "
-        "/episode/uav1/goal "
-        "/model/husky_local/odometry "
-        "/model/husky_2/odometry "
-        "/model/uav1/odometry "
-        "/clock "
-        f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/front_laser/scan/points "
-        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points "
-        f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/planar_laser/scan "
-        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan "
-        f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/camera_front/image "
-        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/camera_front/image "
-        f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/imu_sensor/imu "
-        f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/imu_sensor/imu "
-        f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/air_pressure/air_pressure "
-        f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/magnetometer/magnetometer "
-        f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points "
-        f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/camera_front/image "
+        + " ".join(bag_topics)
     )
     recorder = run_bg(record_cmd)
 else:
-    print("Bag recording disabled. Set ENABLE_BAG_RECORDING = True to record a run.")
+    log_event("Bag recording disabled. Set ENABLE_BAG_RECORDING = True to record a run.")
 
-print("\n==============================")
-print(" MODEL MODE ENABLED ")
-print("==============================")
-print("Press Play in Gazebo")
-print("Press Ctrl+C here when done.\n")
+if DEBUG_ISOLATE_HUSKY_LOCAL:
+    log_event("DEBUG isolate mode: only husky_local is spawned; husky_2, uav1, RViz, and camera viewer are disabled. Bag recording remains enabled.")
+
+log_event("==============================")
+log_event("MODEL MODE ENABLED")
+log_event("==============================")
+log_event("Press Play in Gazebo")
+log_event("Press Ctrl+C here when done.")
 
 rclpy.init()
 # Drive from Gazebo world pose so the controller and the visible goal marker use
@@ -511,13 +614,13 @@ UAV_GOAL = offset_goal_along_path(
     (UAV_X, UAV_Y, UAV_Z),
     GOAL_STOP_OFFSET,
 )
-print(
+log_event(
     "Controller goals (world frame, stop offset applied): "
     f"husky_local=({HUSKY1_GOAL[0]:.3f}, {HUSKY1_GOAL[1]:.3f}), "
     f"husky_2=({HUSKY2_GOAL[0]:.3f}, {HUSKY2_GOAL[1]:.3f}), "
     f"uav=({UAV_GOAL[0]:.3f}, {UAV_GOAL[1]:.3f})"
 )
-print(
+log_event(
     f"Visible goal marker remains at ({WORLD_HUSKY1_GOAL[0]:.3f}, {WORLD_HUSKY1_GOAL[1]:.3f}); "
     f"controller stop tolerance is {GOAL_TOLERANCE:.2f} m."
 )
@@ -667,30 +770,46 @@ if follower is not None:
 try:
     executor.spin()
 except KeyboardInterrupt:
-    print("\nStopping model run...")
+    log_event("Stopping model run...")
 finally:
-    executor.shutdown()
-    episode_metadata.destroy_node()
-    obstacle_detector.destroy_node()
-    driver.destroy_node()
+    managed_nodes = [episode_metadata, obstacle_detector, driver]
     if obstacle_detector2 is not None:
-        obstacle_detector2.destroy_node()
+        managed_nodes.append(obstacle_detector2)
     if driver2 is not None:
-        driver2.destroy_node()
+        managed_nodes.append(driver2)
     if follower is not None:
-        follower.destroy_node()
-    rclpy.shutdown()
+        managed_nodes.append(follower)
+
+    for node in managed_nodes:
+        with suppress(Exception):
+            executor.remove_node(node)
+    executor.shutdown(timeout_sec=2.0)
+    time.sleep(0.25)
+
+    for node in managed_nodes:
+        with suppress(Exception):
+            node.destroy_node()
+
+    if rclpy.ok():
+        rclpy.shutdown()
+
     if recorder is not None:
         recorder.send_signal(signal.SIGINT)
         time.sleep(2)
-    print("Stopping bridge, OMNeT++, and Gazebo...")
-    bridge.send_signal(signal.SIGINT)
-    if rviz is not None:
-        rviz.send_signal(signal.SIGINT)
-    if camera_view is not None:
-        camera_view.send_signal(signal.SIGINT)
-    if omnet is not None:
-        omnet.send_signal(signal.SIGINT)
-    gz.send_signal(signal.SIGINT)
+    log_event(f"STOP timestamp: {datetime.datetime.now().isoformat(timespec='seconds')}")
+    log_event("Stopping bridge, OMNeT++, and Gazebo...")
+    managed_processes = [bridge, rviz, camera_view, omnet, gz]
+    for proc in managed_processes:
+        if proc is None:
+            continue
+        with suppress(Exception):
+            proc.send_signal(signal.SIGINT)
     time.sleep(2)
-    print("All processes stopped cleanly.")
+    for proc in managed_processes:
+        if proc is None:
+            continue
+        with suppress(Exception):
+            if proc.poll() is None:
+                proc.terminate()
+    log_event("All processes stopped cleanly.")
+    close_terminal_tee()
