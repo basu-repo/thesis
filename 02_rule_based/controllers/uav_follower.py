@@ -1,7 +1,9 @@
-"""Simple UAV follower used during live simulation.
+"""Keep the UAV in a configurable formation around the Husky.
 
-The UAV should stay above the Husky, face the Husky, and recover altitude
-aggressively if it drops too low while chasing.
+The follower can place each UAV above, ahead, left, or right of the UGV
+using formation_forward_offset and formation_lateral_offset. This is used
+for dual-UAV live evaluation, where one UAV observes the left side of the
+UGV path and the other UAV observes the right side.
 """
 
 import math
@@ -80,7 +82,11 @@ def extract_model_transform(msg: TFMessage, model_name: str):
 
 
 class UavFollower(Node):
-    """Keep the UAV above the Husky and yawed toward it."""
+    """Keep the UAV in a configurable formation around the Husky.
+    The follower can place each UAV above, ahead, left, or right of the UGV
+    using formation_forward_offset and formation_lateral_offset. This is used
+    for dual-UAV live evaluation, where one UAV observes the left side of the
+    UGV path and the other UAV observes the right side."""
 
     def __init__(
         self,
@@ -123,6 +129,8 @@ class UavFollower(Node):
         path_start_xyz: tuple[float, float, float] | None = None,
         path_goal_xyz: tuple[float, float, float] | None = None,
         goal_blend_start_progress: float = 0.7,
+        formation_forward_offset: float = 6.0,
+        formation_lateral_offset: float = 0.0,
     ):
         super().__init__(node_name)
         self.uav_name = uav_name
@@ -150,6 +158,9 @@ class UavFollower(Node):
         self.catchup_height_buffer = 6.0
         self.state_log_period = 2.0
         self.follow_log_period = 1.0
+
+        self.formation_forward_offset = formation_forward_offset
+        self.formation_lateral_offset = formation_lateral_offset
 
         self.husky_pose = None
         self.husky_twist = None
@@ -266,11 +277,37 @@ class UavFollower(Node):
             )
             self.last_state_log_time = now
 
+        # husky_yaw = husky_state["yaw"]
+        # uav_yaw = uav_state["yaw"]
+
+        # target_x = husky_state["x"] + self.follow_distance * math.cos(husky_yaw)
+        # target_y = husky_state["y"] + self.follow_distance * math.sin(husky_yaw)
+#*****
         husky_yaw = husky_state["yaw"]
         uav_yaw = uav_state["yaw"]
 
-        target_x = husky_state["x"] + self.follow_distance * math.cos(husky_yaw)
-        target_y = husky_state["y"] + self.follow_distance * math.sin(husky_yaw)
+        # Formation target relative to the UGV heading.
+        # forward_offset places the UAV ahead of the UGV.
+        # lateral_offset places the UAV to the left/right of the UGV:
+        #   positive  = left side of the UGV
+        #   negative  = right side of the UGV
+        #
+        # This lets two UAVs observe the UGV path from different aerial viewpoints
+        # instead of both hovering directly above the same point.
+        forward_offset = self.follow_distance + self.formation_forward_offset
+        lateral_offset = self.formation_lateral_offset
+
+        target_x = (
+            husky_state["x"]
+            + math.cos(husky_yaw) * forward_offset
+            - math.sin(husky_yaw) * lateral_offset
+        )
+        target_y = (
+            husky_state["y"]
+            + math.sin(husky_yaw) * forward_offset
+            + math.cos(husky_yaw) * lateral_offset
+        )
+#*****
 
         full_target_z = max(husky_state["z"] + self.follow_height, self.min_world_altitude)
         catchup_target_z = max(
@@ -362,6 +399,7 @@ class UavFollower(Node):
                 f"husky=({husky_state['x']:.2f},{husky_state['y']:.2f},{husky_state['z']:.2f}) "
                 f"uav=({uav_state['x']:.2f},{uav_state['y']:.2f},{uav_state['z']:.2f}) "
                 f"target=({target_x:.2f},{target_y:.2f},{target_z:.2f}) "
+                f"formation=(forward={self.formation_forward_offset:.2f}, lateral={self.formation_lateral_offset:.2f}) "
                 f"err_xy={xy_error:.2f} err_z={error_z:.2f} "
                 f"z_floor={self.min_world_altitude:.2f} alt_mode={alt_mode} "
                 f"cmd_body=({cmd_body_x:.2f},{cmd_body_y:.2f},{linear_z:.2f}) "

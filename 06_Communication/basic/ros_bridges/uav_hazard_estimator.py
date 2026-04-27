@@ -39,6 +39,7 @@ class UavHazardEstimator(Node):
         obstacle_min_z: float = -0.2,
         obstacle_max_z: float = 3.0,
         min_points_blocked: int = 12,
+        source_name: str = "uav1",
     ):
         super().__init__(node_name)
         self.lookahead_min_x = lookahead_min_x
@@ -47,6 +48,7 @@ class UavHazardEstimator(Node):
         self.obstacle_min_z = obstacle_min_z
         self.obstacle_max_z = obstacle_max_z
         self.min_points_blocked = min_points_blocked
+        self.source_name = source_name
 
         self.husky_pose = None
         self.uav_pose = None
@@ -100,6 +102,7 @@ class UavHazardEstimator(Node):
         center_count = 0
         right_count = 0
         min_distance = self.lookahead_max_x
+        obstacle_points_world = []
 
         for x_uav, y_uav, z_uav in point_cloud2.read_points(
             self.latest_pointcloud,
@@ -122,6 +125,10 @@ class UavHazardEstimator(Node):
                 continue
             if abs(y_h) > self.lane_half_width:
                 continue
+            # Store accepted point-cloud points in world coordinates.
+            # These points are inside the UGV forward corridor and are used
+            # to estimate the approximate obstacle position.
+            obstacle_points_world.append((x_world, y_world, z_uav))
 
             min_distance = min(min_distance, x_h)
             if y_h < -0.8:
@@ -136,13 +143,46 @@ class UavHazardEstimator(Node):
         if blocked:
             turn_bias = 1.0 if left_count <= right_count else -1.0
 
+
+        if obstacle_points_world:
+            obstacle_world_x = sum(p[0] for p in obstacle_points_world) / len(obstacle_points_world)
+            obstacle_world_y = sum(p[1] for p in obstacle_points_world) / len(obstacle_points_world)
+            obstacle_world_z = sum(p[2] for p in obstacle_points_world) / len(obstacle_points_world)
+        else:
+            obstacle_world_x = None
+            obstacle_world_y = None
+            obstacle_world_z = None
+
+        total_points = left_count + center_count + right_count
+        confidence = min(1.0, total_points / max(float(self.min_points_blocked * 3), 1.0))
+
+
+        # payload = {
+        #     "blocked": blocked,
+        #     "turn_bias": turn_bias,
+        #     "left_count": left_count,
+        #     "center_count": center_count,
+        #     "right_count": right_count,
+        #     "distance_ahead": min_distance,
+        # }
+
+        # Estimate an approximate obstacle coordinate by averaging the blocked
+        # point-cloud points inside the UGV forward corridor. This coordinate is
+        # later used by the fusion node to decide whether the predicted UGV path
+        # overlaps with a hazard region.
         payload = {
+            "source": self.source_name,
             "blocked": blocked,
             "turn_bias": turn_bias,
             "left_count": left_count,
             "center_count": center_count,
             "right_count": right_count,
             "distance_ahead": min_distance,
+            "obstacle_world_x": obstacle_world_x,
+            "obstacle_world_y": obstacle_world_y,
+            "obstacle_world_z": obstacle_world_z,
+            "confidence": confidence,
+            "timestamp": self.get_clock().now().nanoseconds / 1e9,
         }
         msg = String()
         msg.data = json.dumps(payload)

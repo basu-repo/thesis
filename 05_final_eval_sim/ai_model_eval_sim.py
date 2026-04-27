@@ -13,13 +13,21 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
+
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 THESIS_ROOT = SCRIPT_DIR.parent
 RULE_BASED_ROOT = THESIS_ROOT / "02_rule_based"
 RULE_BASED_SCRIPTS_ROOT = RULE_BASED_ROOT / "scripts"
 CONTROLLERS_ROOT = SCRIPT_DIR / "controllers"
+COMMUNICATION_ROS_BRIDGES_ROOT = THESIS_ROOT / "06_Communication" / "basic" / "ros_bridges"
 
-for extra_path in (RULE_BASED_ROOT, RULE_BASED_SCRIPTS_ROOT, CONTROLLERS_ROOT):
+for extra_path in (
+    RULE_BASED_ROOT,
+    RULE_BASED_SCRIPTS_ROOT,
+    CONTROLLERS_ROOT,
+    COMMUNICATION_ROS_BRIDGES_ROOT,
+):
     extra_str = str(extra_path)
     if extra_str not in sys.path:
         sys.path.insert(0, extra_str)
@@ -34,7 +42,8 @@ from controllers.uav_follower import UavFollower
 from husky_ai_model_driver import HuskyAIModelDriver
 from project_paths import MODELS_DIR, OMNET_DIR, RVIZ_CONFIG_PATH, WORLD_SDF_PATH
 from select_best_live_model import select_best_live_model
-
+from uav_hazard_estimator import UavHazardEstimator
+from multi_agent_hazard_fusion import MultiAgentHazardFusion
 
 WORLD = str(WORLD_SDF_PATH)
 WORLD_NAME = "baylands"
@@ -48,16 +57,25 @@ SPAWN_X, SPAWN_Y, SPAWN_Z = -273.6910, -103.7170, -0.4349
 HUSKY2_OFFSET_X = 4.0
 HUSKY2_OFFSET_Y = 3.0
 HUSKY2_X, HUSKY2_Y, HUSKY2_Z = SPAWN_X + HUSKY2_OFFSET_X, SPAWN_Y + HUSKY2_OFFSET_Y, SPAWN_Z
+# UAV1 starts on one side of the ego UGV.
 UAV_X, UAV_Y, UAV_Z = SPAWN_X + 6.0, SPAWN_Y - 4.0, SPAWN_Z + 4.0
+
+# UAV2 starts on the opposite side of the ego UGV.
+# The two UAVs later keep left/right formation offsets around the UGV.
+UAV2_X, UAV2_Y, UAV2_Z = SPAWN_X + 6.0, SPAWN_Y + 4.0, SPAWN_Z + 4.0
+
 HUSKY1_SPAWN_YAW = math.pi
 HUSKY2_SPAWN_YAW = HUSKY1_SPAWN_YAW
 UAV_SPAWN_YAW = 0.0
+UAV2_SPAWN_YAW = 0.0
 HUSKY1_SPAWN_QZ = math.sin(HUSKY1_SPAWN_YAW / 2.0)
 HUSKY1_SPAWN_QW = math.cos(HUSKY1_SPAWN_YAW / 2.0)
 HUSKY2_SPAWN_QZ = math.sin(HUSKY2_SPAWN_YAW / 2.0)
 HUSKY2_SPAWN_QW = math.cos(HUSKY2_SPAWN_YAW / 2.0)
 UAV_SPAWN_QZ = math.sin(UAV_SPAWN_YAW / 2.0)
 UAV_SPAWN_QW = math.cos(UAV_SPAWN_YAW / 2.0)
+UAV2_SPAWN_QZ = math.sin(UAV2_SPAWN_YAW / 2.0)
+UAV2_SPAWN_QW = math.cos(UAV2_SPAWN_YAW / 2.0)
 
 RAW_WORLD_SHARED_GOAL = (-324.5690, -31.8468, -1.5615)
 GOAL_WORLD_PULLBACK = 13.0
@@ -475,11 +493,36 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
         subprocess.run(["bash", "-c", spawn_uav])
         time.sleep(5)
 
+
+
+        log_event("Spawning UAV 2...")
+        spawn_uav2 = """
+ign service -s /world/{world_name}/create \
+--reqtype ignition.msgs.EntityFactory \
+--reptype ignition.msgs.Boolean \
+--timeout 5000 \
+--req 'sdf_filename: "model://m100/model.sdf", name: "uav2",
+pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav_qz}, w: {uav_qw}}}}}'
+""".format(
+            world_name=WORLD_NAME,
+            uav_x=UAV2_X,
+            uav_y=UAV2_Y,
+            uav_z=UAV2_Z,
+            uav_qz=UAV2_SPAWN_QZ,
+            uav_qw=UAV2_SPAWN_QW,
+        )
+        subprocess.run(["bash", "-c", spawn_uav2])
+        time.sleep(5)
+
+
+
+
     log_event("Spawning goal markers...")
     spawn_goal_marker(WORLD_NAME, "goal_husky_local", (WORLD_HUSKY1_GOAL[0], WORLD_HUSKY1_GOAL[1], GROUND_MARKER_Z), (0.95, 0.12, 0.12, 1.0))
     if not debug_isolate_husky_local:
         spawn_goal_marker(WORLD_NAME, "goal_husky_2", (WORLD_HUSKY2_GOAL[0], WORLD_HUSKY2_GOAL[1], GROUND_MARKER_Z), (0.12, 0.36, 0.95, 1.0))
         spawn_goal_marker(WORLD_NAME, "goal_uav1", (WORLD_UAV_GOAL[0], WORLD_UAV_GOAL[1], GROUND_MARKER_Z), (0.95, 0.85, 0.12, 1.0))
+        spawn_goal_marker(WORLD_NAME, "goal_uav2", (WORLD_UAV_GOAL[0], WORLD_UAV_GOAL[1], GROUND_MARKER_Z), (0.95, 0.55, 0.12, 1.0))
     time.sleep(1)
 
     log_event("Starting bridge...")
@@ -507,6 +550,21 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
             ]
         )
         bridge_topics.extend(camera_bridge_topics(WORLD_NAME, "uav1", "base_link", "camera_front"))
+
+        bridge_topics.extend(
+            [
+                "/uav2/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
+                "/uav2/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
+                "/model/uav2/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
+                "/model/uav2/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
+                "/model/uav2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+                f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
+                f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[ignition.msgs.IMU",
+                f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/air_pressure/air_pressure@sensor_msgs/msg/FluidPressure[ignition.msgs.FluidPressure",
+                f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/magnetometer/magnetometer@sensor_msgs/msg/MagneticField[ignition.msgs.Magnetometer",
+            ]
+        )
+        bridge_topics.extend(camera_bridge_topics(WORLD_NAME, "uav2", "base_link", "camera_front"))
     bridge_cmd = (
         "source /opt/ros/humble/setup.bash && "
         "ros2 run ros_gz_bridge parameter_bridge "
@@ -530,7 +588,7 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
     log_event("OMNeT++ relay disabled for this run.")
     log_event("Bag recording disabled for live model testing.")
     if debug_isolate_husky_local:
-        log_event("DEBUG isolate mode: only husky_local is spawned; husky_2, uav1, RViz, and camera viewer are disabled.")
+        log_event("DEBUG isolate mode: only husky_local is spawned; husky_2, uav1, uav2, RViz, and camera viewer are disabled.")
     log_event("==============================")
     log_event("LIVE AI MODEL MODE ENABLED")
     log_event("==============================")
@@ -541,6 +599,8 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
     husky1_goal = offset_goal_along_path(WORLD_HUSKY1_GOAL, (SPAWN_X, SPAWN_Y, SPAWN_Z), GOAL_STOP_OFFSET)
     husky2_goal = offset_goal_along_path(WORLD_HUSKY2_GOAL, (HUSKY2_X, HUSKY2_Y, HUSKY2_Z), GOAL_STOP_OFFSET)
     uav_goal = offset_goal_along_path(WORLD_UAV_GOAL, (UAV_X, UAV_Y, UAV_Z), GOAL_STOP_OFFSET)
+    uav2_goal = offset_goal_along_path(WORLD_UAV_GOAL, (UAV2_X, UAV2_Y, UAV2_Z), GOAL_STOP_OFFSET)
+    
     if debug_isolate_husky_local:
         log_event(
             "Controller goals (world frame, stop offset applied): "
@@ -551,15 +611,18 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
             "Controller goals (world frame, stop offset applied): "
             f"husky_local=({husky1_goal[0]:.3f}, {husky1_goal[1]:.3f}), "
             f"husky_2=({husky2_goal[0]:.3f}, {husky2_goal[1]:.3f}), "
-            f"uav=({uav_goal[0]:.3f}, {uav_goal[1]:.3f})"
+            f"uav1=({uav_goal[0]:.3f}, {uav_goal[1]:.3f}), "
+            f"uav2=({uav2_goal[0]:.3f}, {uav2_goal[1]:.3f})"
         )
 
     start_goals = {
         "husky_local": {"start": (SPAWN_X, SPAWN_Y, SPAWN_Z), "goal": WORLD_HUSKY1_GOAL},
     }
+    
     if not debug_isolate_husky_local:
         start_goals["husky_2"] = {"start": (HUSKY2_X, HUSKY2_Y, HUSKY2_Z), "goal": WORLD_HUSKY2_GOAL}
         start_goals["uav1"] = {"start": (UAV_X, UAV_Y, UAV_Z), "goal": WORLD_UAV_GOAL}
+        start_goals["uav2"] = {"start": (UAV2_X, UAV2_Y, UAV2_Z), "goal": WORLD_UAV_GOAL}
     episode_metadata = EpisodeMetadataPublisher(world_name=WORLD_NAME, start_goals=start_goals)
 
     husky1_obstacle_action_topic = "/husky_local/obstacle_action"
@@ -595,7 +658,7 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
         obstacle_action_topic=husky1_obstacle_action_topic,
         obstacle_clearance_topic=husky1_obstacle_clearance_topic,
         scan_topic=f"/world/{WORLD_NAME}/model/husky_local/link/base_link/sensor/planar_laser/scan",
-        hazard_topic=None,
+        hazard_topic="/fused_hazard_hint",
         spawn_xyz=(SPAWN_X, SPAWN_Y, SPAWN_Z),
         goals={
             "husky_local": husky1_goal,
@@ -681,7 +744,38 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
             stuck_reverse_seconds=STUCK_REVERSE_SECONDS,
             stuck_bootstrap_seconds=STUCK_BOOTSTRAP_SECONDS,
         )
-        follower = UavFollower(
+        # follower = UavFollower(
+        #     husky_odom_topic="/model/husky_local/odometry",
+        #     uav_odom_topic="/model/uav1/odometry",
+        #     world_pose_topic=f"/world/{WORLD_NAME}/dynamic_pose/info",
+        #     husky_model_name="husky_local",
+        #     uav_model_name="uav1",
+        #     uav_name="uav1",
+        #     follow_distance=UAV_FOLLOW_DISTANCE,
+        #     follow_height=UAV_FOLLOW_HEIGHT,
+        #     ready_topic="/uav1/ready",
+        #     update_period=UAV_UPDATE_PERIOD,
+        #     max_xy_speed=UAV_MAX_XY_SPEED,
+        #     max_z_speed=UAV_MAX_Z_SPEED,
+        #     max_yaw_rate=UAV_MAX_YAW_RATE,
+        #     xy_gain=UAV_XY_GAIN,
+        #     z_gain=UAV_Z_GAIN,
+        #     yaw_gain=UAV_YAW_GAIN,
+        #     heading_align_gain=UAV_HEADING_ALIGN_GAIN,
+        #     min_forward_speed=UAV_MIN_FORWARD_SPEED,
+        #     target_smoothing=UAV_TARGET_SMOOTHING,
+        #     xy_deadband=UAV_XY_DEADBAND,
+        #     z_deadband=UAV_Z_DEADBAND,
+        #     yaw_deadband=UAV_YAW_DEADBAND,
+        #     min_track_speed=UAV_MIN_TRACK_SPEED,
+        #     husky_spawn_xyz=(SPAWN_X, SPAWN_Y, SPAWN_Z),
+        #     husky_spawn_yaw=HUSKY1_SPAWN_YAW,
+        #     uav_spawn_xyz=(UAV_X, UAV_Y, UAV_Z),
+        #     uav_spawn_yaw=UAV_SPAWN_YAW,
+        # )
+
+        follower_left = UavFollower(
+            node_name="uav1_left_follower",
             husky_odom_topic="/model/husky_local/odometry",
             uav_odom_topic="/model/uav1/odometry",
             world_pose_topic=f"/world/{WORLD_NAME}/dynamic_pose/info",
@@ -709,8 +803,85 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
             husky_spawn_yaw=HUSKY1_SPAWN_YAW,
             uav_spawn_xyz=(UAV_X, UAV_Y, UAV_Z),
             uav_spawn_yaw=UAV_SPAWN_YAW,
+
+            # UAV1 stays ahead-left of the ego UGV.
+            formation_forward_offset=6.0,
+            formation_lateral_offset=4.0,
         )
-        managed_nodes.extend([obstacle_detector2, driver2, follower])
+
+        follower_right = UavFollower(
+            node_name="uav2_right_follower",
+            husky_odom_topic="/model/husky_local/odometry",
+            uav_odom_topic="/model/uav2/odometry",
+            world_pose_topic=f"/world/{WORLD_NAME}/dynamic_pose/info",
+            husky_model_name="husky_local",
+            uav_model_name="uav2",
+            uav_name="uav2",
+            follow_distance=UAV_FOLLOW_DISTANCE,
+            follow_height=UAV_FOLLOW_HEIGHT,
+            ready_topic="/uav2/ready",
+            update_period=UAV_UPDATE_PERIOD,
+            max_xy_speed=UAV_MAX_XY_SPEED,
+            max_z_speed=UAV_MAX_Z_SPEED,
+            max_yaw_rate=UAV_MAX_YAW_RATE,
+            xy_gain=UAV_XY_GAIN,
+            z_gain=UAV_Z_GAIN,
+            yaw_gain=UAV_YAW_GAIN,
+            heading_align_gain=UAV_HEADING_ALIGN_GAIN,
+            min_forward_speed=UAV_MIN_FORWARD_SPEED,
+            target_smoothing=UAV_TARGET_SMOOTHING,
+            xy_deadband=UAV_XY_DEADBAND,
+            z_deadband=UAV_Z_DEADBAND,
+            yaw_deadband=UAV_YAW_DEADBAND,
+            min_track_speed=UAV_MIN_TRACK_SPEED,
+            husky_spawn_xyz=(SPAWN_X, SPAWN_Y, SPAWN_Z),
+            husky_spawn_yaw=HUSKY1_SPAWN_YAW,
+            uav_spawn_xyz=(UAV2_X, UAV2_Y, UAV2_Z),
+            uav_spawn_yaw=UAV2_SPAWN_YAW,
+
+            # UAV2 stays ahead-right of the ego UGV.
+            formation_forward_offset=6.0,
+            formation_lateral_offset=-4.0,
+        )
+
+        
+
+        uav1_hazard = UavHazardEstimator(
+            node_name="uav1_hazard_estimator",
+            husky_odom_topic="/model/husky_local/odometry",
+            uav_odom_topic="/model/uav1/odometry",
+            uav_pointcloud_topic=f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points",
+            output_topic="/uav1/hazard_hint_raw",
+            source_name="uav1",
+        )
+
+        uav2_hazard = UavHazardEstimator(
+            node_name="uav2_hazard_estimator",
+            husky_odom_topic="/model/husky_local/odometry",
+            uav_odom_topic="/model/uav2/odometry",
+            uav_pointcloud_topic=f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/front_laser/scan/points",
+            output_topic="/uav2/hazard_hint_raw",
+            source_name="uav2",
+        )
+
+        hazard_fusion = MultiAgentHazardFusion(
+            node_name="multi_agent_hazard_fusion",
+            ugv_action_topic=husky1_obstacle_action_topic,
+            ugv_clearance_topic=husky1_obstacle_clearance_topic,
+            uav1_topic="/uav1/hazard_hint_raw",
+            uav2_topic="/uav2/hazard_hint_raw",
+            output_topic="/fused_hazard_hint",
+            uav_timeout=1.0,
+        )
+        managed_nodes.extend([
+            obstacle_detector2,
+            driver2,
+            follower_left,
+            follower_right,
+            uav1_hazard,
+            uav2_hazard,
+            hazard_fusion,
+        ])
     for node in managed_nodes:
         executor.add_node(node)
 

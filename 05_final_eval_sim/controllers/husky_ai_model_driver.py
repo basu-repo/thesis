@@ -145,6 +145,10 @@ class HuskyAIModelDriver(Node):
         self.obstacle_clearance_topic = obstacle_clearance_topic
         self.scan_topic = scan_topic
         self.hazard_topic = hazard_topic
+        self.fused_hazard = None
+        self.fused_hazard_received_time = 0.0
+        self.fused_hazard_timeout = hazard_timeout
+        self.hazard_waypoint_shift = 2.0
         self.spawn_xyz = spawn_xyz
         self.goals = goals or {}
         self.target_bias_x = target_bias_x
@@ -239,7 +243,9 @@ class HuskyAIModelDriver(Node):
         if self.obstacle_action_topic is not None:
             self.create_subscription(String, self.obstacle_action_topic, self.obstacle_action_cb, 10)
         if self.obstacle_clearance_topic is not None:
-            self.create_subscription(Vector3, self.obstacle_clearance_topic, self.obstacle_clearance_cb, 10)
+            self.create_subscription(Vector3, self.obstacle_clearance_topic, self.obstacle_clearance_cb, 10)  
+        if self.hazard_topic is not None:
+            self.create_subscription(String, self.hazard_topic, self.fused_hazard_cb, 10)
         if self.uses_scan:
             if self.scan_topic is None:
                 raise ValueError(f"{self.model_slug} requires scan_topic for live inference.")
@@ -432,6 +438,20 @@ class HuskyAIModelDriver(Node):
     def obstacle_clearance_cb(self, msg: Vector3):
         self.obstacle_clearance = (float(msg.x), float(msg.y), float(msg.z))
 
+    
+    def fused_hazard_cb(self, msg: String):
+        """Receive fused hazard hints from UGV + UAV1 + UAV2.
+
+        This does not retrain the model. It only stores the latest hazard
+        message so the selected AI-predicted waypoint can be adjusted if needed.
+        """
+        try:
+            self.fused_hazard = json.loads(msg.data)
+            self.fused_hazard_received_time = time.monotonic()
+        except json.JSONDecodeError:
+            self.fused_hazard = None
+    
+    
     def scan_cb(self, msg: LaserScan):
         self.scan_history.append(self._resample_scan(msg))
 
@@ -1090,6 +1110,55 @@ class HuskyAIModelDriver(Node):
             goal[1] - ego_xy[1],
             goal[0] - ego_xy[0],
         )
+    
+    def _fresh_fused_hazard(self) -> dict | None:
+        """Return the latest fused hazard if it is fresh and active."""
+        if self.fused_hazard is None:
+            return None
+        if (time.monotonic() - self.fused_hazard_received_time) > self.fused_hazard_timeout:
+            return None
+        if not self.fused_hazard.get("blocked", False):
+            return None
+        return self.fused_hazard
+
+
+    def _adjust_waypoint_with_fused_hazard(self, target_x: float, target_y: float) -> tuple[float, float]:
+        """Shift the model-selected waypoint away from fused hazard direction.
+
+        The trained AI model still predicts the short-horizon path. This method
+        only applies a lightweight safety correction when the fused UGV/UAV
+        perception layer reports an obstacle near the predicted route.
+        """
+        hazard = self._fresh_fused_hazard()
+        if hazard is None:
+            return target_x, target_y
+
+        turn_bias = float(hazard.get("turn_bias", 0.0))
+        confidence = float(hazard.get("confidence", 0.5))
+
+        if abs(turn_bias) < 0.1:
+            return target_x, target_y
+
+        # turn_bias > 0 means shift the waypoint to the left of the UGV heading.
+        # turn_bias < 0 means shift it to the right.
+        side_sign = 1.0 if turn_bias > 0.0 else -1.0
+        shift = self.hazard_waypoint_shift * max(0.3, min(confidence, 1.0))
+        yaw = self._ego_yaw()
+
+        adjusted_x = target_x - math.sin(yaw) * side_sign * shift
+        adjusted_y = target_y + math.cos(yaw) * side_sign * shift
+
+        mode = hazard.get("mode", "unknown")
+        sources = hazard.get("sources", [])
+        self.get_logger().info(
+            "Fused hazard waypoint adjustment: "
+            f"mode={mode} sources={sources} turn_bias={turn_bias:.2f} "
+            f"confidence={confidence:.2f} "
+            f"target_before=({target_x:.2f},{target_y:.2f}) "
+            f"target_after=({adjusted_x:.2f},{adjusted_y:.2f})"
+        )
+
+        return adjusted_x, adjusted_y
 
     def step(self):
         """Main control loop: stop at goal, align to goal, then follow predictions."""
@@ -1205,6 +1274,9 @@ class HuskyAIModelDriver(Node):
         if goal is not None:
             target_x = (1.0 - self.goal_blend) * target_x + self.goal_blend * goal[0]
             target_y = (1.0 - self.goal_blend) * target_y + self.goal_blend * goal[1]
+        # The AI model proposes the waypoint; the fused hazard layer only applies
+        # a small safety correction if UGV/UAV perception detects an obstacle.
+        target_x, target_y = self._adjust_waypoint_with_fused_hazard(float(target_x), float(target_y))
 
         dx = target_x - ego_xy[0]
         dy = target_y - ego_xy[1]
@@ -1217,6 +1289,10 @@ class HuskyAIModelDriver(Node):
             if goal is not None:
                 target_x = (1.0 - self.goal_blend) * target_x + self.goal_blend * goal[0]
                 target_y = (1.0 - self.goal_blend) * target_y + self.goal_blend * goal[1]
+            
+            
+            target_x, target_y = self._adjust_waypoint_with_fused_hazard(float(target_x), float(target_y))
+
             dx = target_x - ego_xy[0]
             dy = target_y - ego_xy[1]
             distance = math.hypot(dx, dy)
