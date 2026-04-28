@@ -92,8 +92,8 @@ MAX_LINEAR_SPEED = 2.0
 MAX_ANGULAR_SPEED = 0.85
 HEADING_DEADBAND = 0.12
 GOAL_TOLERANCE = 1.5
-STUCK_TIMEOUT_SECONDS = 3.0
-STUCK_PROGRESS_DISTANCE = 0.15
+STUCK_TIMEOUT_SECONDS = 5.0
+STUCK_PROGRESS_DISTANCE = 0.08
 STUCK_REVERSE_SPEED = -0.8
 STUCK_REVERSE_SECONDS = 2.0
 STUCK_BOOTSTRAP_SECONDS = 2.0
@@ -853,6 +853,13 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
             uav_pointcloud_topic=f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points",
             output_topic="/uav1/hazard_hint_raw",
             source_name="uav1",
+            # More permissive UAV hazard detection for initial testing.
+            lookahead_min_x=0.5,
+            lookahead_max_x=15.0,
+            lane_half_width=6.0,
+            obstacle_min_z=-2.0,
+            obstacle_max_z=5.0,
+            min_points_blocked=3,
         )
 
         uav2_hazard = UavHazardEstimator(
@@ -862,6 +869,13 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
             uav_pointcloud_topic=f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/front_laser/scan/points",
             output_topic="/uav2/hazard_hint_raw",
             source_name="uav2",
+            # More permissive UAV hazard detection for initial testing.
+            lookahead_min_x=0.5,
+            lookahead_max_x=15.0,
+            lane_half_width=6.0,
+            obstacle_min_z=-2.0,
+            obstacle_max_z=5.0,
+            min_points_blocked=3,
         )
 
         hazard_fusion = MultiAgentHazardFusion(

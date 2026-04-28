@@ -92,6 +92,42 @@ class MultiAgentHazardFusion(Node):
             if age <= self.uav_timeout:
                 fresh[source] = payload
         return fresh
+    
+
+    def _uav_status_summary(self, source: str, fresh_uavs: dict) -> dict:
+        """Return diagnostic status for one UAV hazard source.
+
+        This makes the fused hazard output easier to debug and also shows
+        whether a UAV is connected, stale, or currently reporting an obstacle.
+        """
+        payload = self.uav_messages.get(source)
+        received_time = self.uav_received_time.get(source, 0.0)
+
+        if payload is None or received_time <= 0.0:
+            return {
+                "connection": "never_received",
+                "age": None,
+                "last_blocked": None,
+                "last_confidence": None,
+                "last_distance_ahead": None,
+                "accepted_points": None,
+                "total_points_read": None,
+            }
+
+        age = time.monotonic() - received_time
+        connection = "fresh" if source in fresh_uavs else "stale_or_disconnected"
+
+        return {
+            "connection": connection,
+            "age": age,
+            "last_blocked": bool(payload.get("blocked", False)),
+            "last_confidence": payload.get("confidence"),
+            "last_distance_ahead": payload.get("distance_ahead"),
+            "accepted_points": payload.get("accepted_points"),
+            "total_points_read": payload.get("total_points_read"),
+        }
+    
+
 
     def _ugv_turn_bias(self) -> float:
         front, left, right = self.ugv_clearance
@@ -165,9 +201,14 @@ class MultiAgentHazardFusion(Node):
         else:
             mode = "clear"
 
+        uav_status = {
+            "uav1": self._uav_status_summary("uav1", fresh_uavs),
+            "uav2": self._uav_status_summary("uav2", fresh_uavs),
+        }
+
         connection_state = {
-            "uav1": "fresh" if "uav1" in fresh_uavs else "stale_or_disconnected",
-            "uav2": "fresh" if "uav2" in fresh_uavs else "stale_or_disconnected",
+            "uav1": uav_status["uav1"]["connection"],
+            "uav2": uav_status["uav2"]["connection"],
         }
 
         fused = {
@@ -179,6 +220,7 @@ class MultiAgentHazardFusion(Node):
             "turn_direction": turn_direction,
             "distance_ahead": min(distance_candidates) if distance_candidates else None,
             "connection_state": connection_state,
+            "uav_status": uav_status,
             "timestamp": self.get_clock().now().nanoseconds / 1e9,
         }
 

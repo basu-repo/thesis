@@ -1182,6 +1182,22 @@ class HuskyAIModelDriver(Node):
 
         now = time.monotonic()
         if self._stuck_recovery_active(now):
+            front = self._front_clearance()
+
+            # If the path is already clear, do not keep reversing blindly.
+            # Try a short forward escape instead, because the robot may be sitting
+            # on a small traversable obstacle rather than facing a real wall.
+            if front > self.obstacle_clear_distance:
+                escape_linear = max(0.6, min(self.max_linear_speed, 1.0))
+                self._log_decision(
+                    now,
+                    stage="stuck_forward_escape",
+                    linear_x=escape_linear,
+                    angular_z=0.0,
+                )
+                self.publish_cmd(escape_linear, 0.0)
+                return
+
             self._log_decision(
                 now,
                 stage="stuck_recovery",

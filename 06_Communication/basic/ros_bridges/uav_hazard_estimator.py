@@ -104,12 +104,28 @@ class UavHazardEstimator(Node):
         min_distance = self.lookahead_max_x
         obstacle_points_world = []
 
+        # Diagnostic counters for debugging UAV point-cloud filtering.
+        # These values help us understand why a UAV reports blocked=false:
+        # - total_points_read: how many point-cloud points were received
+        # - z_filtered_points: how many points were rejected by height filtering
+        # - corridor_x_filtered_points: how many points were outside the forward lookahead range
+        # - corridor_y_filtered_points: how many points were outside the lane width
+        # - accepted_points: how many points remained inside the UGV forward corridor
+        total_points_read = 0
+        z_filtered_points = 0
+        corridor_x_filtered_points = 0
+        corridor_y_filtered_points = 0
+        accepted_points = 0
+
         for x_uav, y_uav, z_uav in point_cloud2.read_points(
             self.latest_pointcloud,
             field_names=("x", "y", "z"),
             skip_nans=True,
         ):
+            total_points_read += 1
+
             if z_uav < self.obstacle_min_z or z_uav > self.obstacle_max_z:
+                z_filtered_points += 1
                 continue
 
             x_world = uav_pos.x + cos_uav * x_uav - sin_uav * y_uav
@@ -122,12 +138,16 @@ class UavHazardEstimator(Node):
             y_h = -sin_h * dx_world + cos_h * dy_world
 
             if x_h < self.lookahead_min_x or x_h > self.lookahead_max_x:
+                corridor_x_filtered_points += 1
                 continue
+
             if abs(y_h) > self.lane_half_width:
+                corridor_y_filtered_points += 1
                 continue
             # Store accepted point-cloud points in world coordinates.
             # These points are inside the UGV forward corridor and are used
             # to estimate the approximate obstacle position.
+            accepted_points += 1
             obstacle_points_world.append((x_world, y_world, z_uav))
 
             min_distance = min(min_distance, x_h)
@@ -182,6 +202,11 @@ class UavHazardEstimator(Node):
             "obstacle_world_y": obstacle_world_y,
             "obstacle_world_z": obstacle_world_z,
             "confidence": confidence,
+            "total_points_read": total_points_read,
+            "z_filtered_points": z_filtered_points,
+            "corridor_x_filtered_points": corridor_x_filtered_points,
+            "corridor_y_filtered_points": corridor_y_filtered_points,
+            "accepted_points": accepted_points,
             "timestamp": self.get_clock().now().nanoseconds / 1e9,
         }
         msg = String()
