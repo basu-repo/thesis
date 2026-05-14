@@ -1,0 +1,10 @@
+# One bag per line.
+# You can write either:
+# - a bag folder name, for example:
+#   run_model_20260511_222947
+# - or a full absolute path to a bag folder
+#
+# Lines starting with # are ignored.
+# Blank lines are ignored.
+
+run_model_20260511_221726
