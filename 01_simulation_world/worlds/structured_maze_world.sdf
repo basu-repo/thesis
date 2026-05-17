@@ -1,0 +1,93 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <world name="structured_maze_world">
+
+    <plugin filename="libignition-gazebo-physics-system.so"
+            name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="libignition-gazebo-user-commands-system.so"
+            name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="libignition-gazebo-scene-broadcaster-system.so"
+            name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="libignition-gazebo-sensors-system.so"
+            name="ignition::gazebo::systems::Sensors"/>
+
+    <physics name="default" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 20 0 0 0</pose>
+      <intensity>2.5</intensity>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.4 0.2 -1</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <pose>0 0 -0.02 0 0 0</pose>
+      <link name="ground_link">
+        <collision name="collision"><geometry><box><size>140 90 0.04</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>140 90 0.04</size></box></geometry><material><ambient>0.50 0.52 0.48 1</ambient><diffuse>0.50 0.52 0.48 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Maze/corridor-like static walls. Start near x=0, goal usually around x=45-55. -->
+    <model name="wall_lower_1">
+      <static>true</static>
+      <pose>12 -4 0.75 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>14 0.8 1.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>14 0.8 1.5</size></box></geometry><material><ambient>0.65 0.65 0.65 1</ambient><diffuse>0.65 0.65 0.65 1</diffuse></material></visual></link>
+    </model>
+
+    <model name="wall_upper_1">
+      <static>true</static>
+      <pose>12 4 0.75 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>14 0.8 1.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>14 0.8 1.5</size></box></geometry><material><ambient>0.65 0.65 0.65 1</ambient><diffuse>0.65 0.65 0.65 1</diffuse></material></visual></link>
+    </model>
+
+    <model name="center_block_left_choice">
+      <static>true</static>
+      <pose>22 0 0.9 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>2.0 5.0 1.8</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 5.0 1.8</size></box></geometry><material><ambient>0.8 0.25 0.25 1</ambient><diffuse>0.8 0.25 0.25 1</diffuse></material></visual></link>
+    </model>
+
+    <model name="wall_lower_2">
+      <static>true</static>
+      <pose>32 -3 0.75 0 0 0.25</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>16 0.8 1.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>16 0.8 1.5</size></box></geometry><material><ambient>0.55 0.55 0.60 1</ambient><diffuse>0.55 0.55 0.60 1</diffuse></material></visual></link>
+    </model>
+
+    <model name="wall_upper_2">
+      <static>true</static>
+      <pose>35 5 0.75 0 0 -0.20</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>16 0.8 1.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>16 0.8 1.5</size></box></geometry><material><ambient>0.55 0.55 0.60 1</ambient><diffuse>0.55 0.55 0.60 1</diffuse></material></visual></link>
+    </model>
+
+    <model name="narrow_gate_left_post">
+      <static>true</static>
+      <pose>43 -2.2 0.9 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>1.2 2.8 1.8</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.2 2.8 1.8</size></box></geometry><material><ambient>0.25 0.45 0.85 1</ambient><diffuse>0.25 0.45 0.85 1</diffuse></material></visual></link>
+    </model>
+
+    <model name="narrow_gate_right_post">
+      <static>true</static>
+      <pose>43 2.2 0.9 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>1.2 2.8 1.8</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.2 2.8 1.8</size></box></geometry><material><ambient>0.25 0.45 0.85 1</ambient><diffuse>0.25 0.45 0.85 1</diffuse></material></visual></link>
+    </model>
+
+    <model name="cylinder_obstacle_after_gate">
+      <static>true</static>
+      <pose>50 0.8 0.9 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><cylinder><radius>0.9</radius><length>1.8</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.9</radius><length>1.8</length></cylinder></geometry><material><ambient>0.20 0.70 0.35 1</ambient><diffuse>0.20 0.70 0.35 1</diffuse></material></visual></link>
+    </model>
+
+  </world>
+</sdf>

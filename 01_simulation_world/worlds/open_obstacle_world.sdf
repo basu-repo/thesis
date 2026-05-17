@@ -1,0 +1,93 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <world name="open_obstacle_world">
+
+    <plugin filename="libignition-gazebo-physics-system.so"
+            name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="libignition-gazebo-user-commands-system.so"
+            name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="libignition-gazebo-scene-broadcaster-system.so"
+            name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="libignition-gazebo-sensors-system.so"
+            name="ignition::gazebo::systems::Sensors"/>
+
+    <physics name="default" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 20 0 0 0</pose>
+      <intensity>2.5</intensity>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.4 0.2 -1</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <pose>0 0 -0.02 0 0 0</pose>
+      <link name="ground_link">
+        <collision name="collision">
+          <geometry>
+            <box><size>120 80 0.04</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>120 80 0.04</size></box>
+          </geometry>
+          <material>
+            <ambient>0.55 0.58 0.52 1</ambient>
+            <diffuse>0.55 0.58 0.52 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Simple open-field obstacles for early dataset/debug runs. -->
+    <model name="box_obstacle_center">
+      <static>true</static>
+      <pose>10 0 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.8 1.8 1.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.8 1.8 1.5</size></box></geometry><material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="cylinder_obstacle_left">
+      <static>true</static>
+      <pose>16 3 0.8 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><cylinder><radius>0.8</radius><length>1.6</length></cylinder></geometry></collision>
+        <visual name="visual"><geometry><cylinder><radius>0.8</radius><length>1.6</length></cylinder></geometry><material><ambient>0.2 0.35 0.9 1</ambient><diffuse>0.2 0.35 0.9 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="sphere_obstacle_right">
+      <static>true</static>
+      <pose>22 -2.5 0.8 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><sphere><radius>0.8</radius></sphere></geometry></collision>
+        <visual name="visual"><geometry><sphere><radius>0.8</radius></sphere></geometry><material><ambient>0.2 0.75 0.35 1</ambient><diffuse>0.2 0.75 0.35 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="short_wall_obstacle">
+      <static>true</static>
+      <pose>30 1.5 0.65 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.8 6.0 1.3</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.8 6.0 1.3</size></box></geometry><material><ambient>0.75 0.55 0.25 1</ambient><diffuse>0.75 0.55 0.25 1</diffuse></material></visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
