@@ -378,6 +378,7 @@
       <sensor name="planar_laser" type="gpu_ray">
           <pose>0.474 0 0.127 0 -0 0</pose>
           <update_rate>10</update_rate>
+          <visualize>0</visualize>
           <lidar>
               <scan>
                   <horizontal>
@@ -404,7 +405,7 @@
 
       <!-- OS1-64 3D Laser Configuration (10x2048 or 10x1024 or 20x1024 or 20x512 as possible (rate) x (hor. res.) configs)-->
       <sensor name="front_laser" type="gpu_lidar">
-        <visualize>1</visualize>
+        <visualize>0</visualize>
         <!-- <update_rate>20</update_rate> -->
         <update_rate>10</update_rate>
         <lidar>
@@ -546,7 +547,7 @@
           </contact>
           <friction>
             <ode>
-              <mu>0.5</mu>
+              <mu>1.0</mu>
               <mu2>1</mu2>
               <slip1>0.00062</slip1>
               <slip2>0</slip2>
@@ -614,7 +615,7 @@
           </contact>
           <friction>
             <ode>
-              <mu>0.5</mu>
+              <mu>1.0</mu>
               <mu2>1</mu2>
               <slip1>0.00062</slip1>
               <slip2>0</slip2>
@@ -682,7 +683,7 @@
           </contact>
           <friction>
             <ode>
-              <mu>0.5</mu>
+              <mu>1.0</mu>
               <mu2>1</mu2>
               <slip1>0.00062</slip1>
               <slip2>0</slip2>
@@ -750,7 +751,7 @@
           </contact>
           <friction>
             <ode>
-              <mu>0.5</mu>
+              <mu>1.0</mu>
               <mu2>1</mu2>
               <slip1>0.00062</slip1>
               <slip2>0</slip2>
@@ -1051,7 +1052,7 @@
 	<right_joint>rear_right_wheel_joint</right_joint>
 	<wheel_separation>0.57</wheel_separation>
 	<wheel_radius>0.165</wheel_radius>
-	<topic>/cmd_vel</topic>
+	<topic>/cmd_vel_husky2</topic>
     </plugin>
     
   
@@ -1063,7 +1064,7 @@
     </plugin>
 
   
-    <link name="flag_marker_red">
+    <link name="flag_marker_blue">
       <pose>0 0 0.32 0 0 0</pose>
       <collision name="collision">
         <geometry>
@@ -1081,15 +1082,15 @@
           </cylinder>
         </geometry>
         <material>
-          <ambient>0.95 0.12 0.12 1.0</ambient>
-          <diffuse>0.95 0.12 0.12 1.0</diffuse>
-          <emissive>0.38 0.048 0.048 1.0</emissive>
+          <ambient>0.12 0.36 0.95 1.0</ambient>
+          <diffuse>0.12 0.36 0.95 1.0</diffuse>
+          <emissive>0.048 0.144 0.38 1.0</emissive>
         </material>
       </visual>
     </link>
-    <joint name="flag_marker_red_joint" type="fixed">
+    <joint name="flag_marker_blue_joint" type="fixed">
       <parent>base_link</parent>
-      <child>flag_marker_red</child>
+      <child>flag_marker_blue</child>
     </joint>
 
   </model>

@@ -246,13 +246,14 @@
                         <stddev>0.007</stddev>
                     </noise>
                 </camera>
+                <visualize>0</visualize>
             </sensor>
             <visual name="laser_visual">
                 <pose>0 0 0.05 0 0 -0.436332</pose>
                 <geometry>
                     <cylinder>
-                        <radius>0.03</radius>
-                        <length>0.1</length>
+                        <radius>0</radius>
+                        <length>0</length>
                     </cylinder>
                 </geometry>
             </visual>
@@ -288,6 +289,7 @@
                         <stddev>0.03</stddev>
                     </noise>
                 </lidar>
+                <visualize>0</visualize>
             </sensor>
         </link>
         <link name="rotor_0">
