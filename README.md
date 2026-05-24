@@ -25,17 +25,17 @@ This repository is organized as the active thesis pipeline for:
   - live learned-model controller evaluation in Gazebo
 - `simulation_dashboard`
   - local web dashboard for launching and monitoring runs
-- `thesis_template_hh`
-  - thesis source, chapters, figures, and bibliography
-- `thesis_refrences`
-  - reference material kept alongside the report
+
+Local-only folders such as `thesis_template_hh`, `thesis_refrences`, and `.codex`
+may exist in the working directory, but they are intentionally ignored and are
+not part of the tracked Git repo.
 
 ## Main Pipeline
 
 1. Run the cooperative rule-based simulator in `cooperative_sim`.
 2. Record bags and logs into `dataset`.
 3. Export bags to episode frames with the `model_training` scripts.
-4. Build the shared sample table and train/compare models in the `08` notebooks.
+4. Build the shared sample table and train or compare models in the `model_training` notebooks.
 5. Evaluate the selected model live in `model_eval`.
 6. Optionally run communication-aware live evaluation with the local relay profiles in `communication`.
 
@@ -87,37 +87,24 @@ The active local relay profiles are:
 These are defined under:
 - `communication/basic/onmetpp/omnetpp.ini`
 
-For local communication-aware `09` runs, the UGV receives delayed and degraded UAV context through the relay profile while keeping its own local sensing direct.
+For local communication-aware `model_eval` runs, the UGV receives delayed and degraded UAV context through the relay profile while keeping its own local sensing direct.
 
 ## Quick Checks After Moving The Repository
 
 1. Verify the repository root is still `/home/basudeo/Documents/Thesis`, or update the path helper files above.
 2. Confirm `simulation/worlds/baylands.sdf` and `simulation/models/` are present.
 3. Confirm `dataset/bags/` and `dataset/logs/` are writable.
-4. Confirm the Python environment used for `08` includes `numpy`, `pandas`, `torch`, `matplotlib`, `scikit-learn`, `jupyter`, and `rosbags`.
-5. Source ROS 2 before launching `07` or `09`:
+4. Confirm the Python environment used for `model_training` includes `numpy`, `pandas`, `torch`, `matplotlib`, `scikit-learn`, `jupyter`, and `rosbags`.
+5. Source ROS 2 before launching `cooperative_sim` or `model_eval`:
 
 ```bash
 source /opt/ros/humble/setup.bash
 ```
-
-## Thesis Source
-
-The report lives in:
-- `thesis_template_hh`
-
-Most actively edited files are:
-- `thesis_template_hh/Chapters/Chapter01.tex`
-- `thesis_template_hh/Chapters/Chapter02.tex`
-- `thesis_template_hh/Chapters/Chapter03.tex`
-- `thesis_template_hh/Chapters/Chapter04.tex`
-- `thesis_template_hh/Chapters/Chapter05.tex`
-- `thesis_template_hh/Chapters/Chapter06.tex`
-- `thesis_template_hh/Chapters/Chapter07.tex`
 
 ## Notes
 
 - `cooperative_sim` is the active rule-based stack.
 - `model_training` is the active training and comparison stack.
 - `model_eval` is the active learned-controller evaluation stack.
+- Thesis-writing assets and reference PDFs are intentionally kept out of Git.
 - Older superseded folders have already been removed to keep this repository focused on the final thesis workflow.

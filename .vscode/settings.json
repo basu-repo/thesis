@@ -1,3 +1,5 @@
 {
-    "ROS2.distro": "humble"
+    "ROS2.distro": "humble",
+    "github.copilot.chat.codeGeneration.useInstructionFiles": true,
+    "git.ignoreLimitWarning": true
 }
