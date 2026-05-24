@@ -4,15 +4,17 @@ data/
 results/
 rellis_like_dataset/
 hybrid_maneuver_dataset/
-03_dataset/husky_control_dataset/
-03_dataset/hybrid_maneuvers_dataset/
-03_dataset/bags/
-04_model_evaluation/results/
-04_model_evaluation/plots/
-04_model_evaluation/comparison_exports/
-04_model_evaluation/model_weights/
-05_final_eval_sim/logs/
-05_final_eval_sim/output/
+dataset/husky_control_dataset/
+dataset/hybrid_maneuvers_dataset/
+dataset/bags/
+dataset/logs/
+model_training/results/
+model_training/plots/
+model_training/comparison_exports/
+model_training/model_weights/
+model_eval/logs/
+model_eval/output/
+model_eval/results/
 
 # Generated analysis artifacts
 *.log
@@ -32,6 +34,7 @@ models/husky/model_blue_tag.sdf
 *.pyo
 **/__pycache__/
 .ipynb_checkpoints/
+.vscode/
 
 # OMNeT++ build outputs
 onmetpp/.cmdenv-log
@@ -39,3 +42,5 @@ onmetpp/onmetpp
 onmetpp/ros_network_sim
 onmetpp/out/
 onmetpp/results/
+communication/basic/onmetpp/out/
+communication/basic/onmetpp/results/

@@ -1,0 +1,30 @@
+{
+  "model": "cnn_lstm",
+  "sequences": [
+    "00",
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+  ],
+  "samples": 32234,
+  "train": 22563,
+  "val": 4835,
+  "test": 4836,
+  "ADE": 0.37276691198349,
+  "FDE": 0.9319756627082825,
+  "RMSE": 0.4277556538581848,
+  "model_path": "/home/basudeo/Documents/Thesis/models/kitti_75pct_cnn_lstm_done.pt"
+}

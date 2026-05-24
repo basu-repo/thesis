@@ -1,0 +1,285 @@
+:root {
+  --bg: #eef3f7;
+  --panel: #ffffff;
+  --text: #173042;
+  --muted: #5f7483;
+  --line: #d4dde5;
+  --accent: #0b6aa2;
+  --accent-strong: #084d76;
+  --soft: #e8f2f9;
+  --danger: #9b2d2d;
+  --shadow: 0 10px 24px rgba(23, 48, 66, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: linear-gradient(180deg, #f6fafc 0%, var(--bg) 100%);
+  color: var(--text);
+}
+
+.layout {
+  width: min(1380px, calc(100vw - 32px));
+  margin: 24px auto 40px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 380px 1fr;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 20px 22px;
+}
+
+.controls,
+.status {
+  align-self: start;
+}
+
+.intro {
+  color: var(--muted);
+  margin-top: 0;
+  line-height: 1.5;
+}
+
+.group,
+fieldset {
+  margin-bottom: 16px;
+}
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 14px 8px;
+  background: #fbfdfe;
+}
+
+legend {
+  padding: 0 8px;
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+label {
+  display: block;
+  font-size: 0.94rem;
+  margin-bottom: 6px;
+}
+
+input[type="text"],
+input[type="number"],
+select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: #fff;
+}
+
+.grid.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.92rem;
+  margin-bottom: 10px;
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+button,
+.viewer-controls a {
+  appearance: none;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+}
+
+button:hover {
+  background: var(--accent-strong);
+}
+
+button.secondary,
+.viewer-controls a {
+  background: var(--soft);
+  color: var(--accent-strong);
+}
+
+button.danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+button.danger:hover {
+  background: #7b2222;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.status-card {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fbfdfe;
+  border: 1px solid var(--line);
+}
+
+.status-card .label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+}
+
+.status-card .value {
+  font-weight: 700;
+}
+
+.meta-block {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.meta-block pre,
+#logOutput {
+  margin: 4px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #0f1a20;
+  color: #d9ecf5;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+}
+
+.resource-block {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.resource-block h3 {
+  margin: 0;
+}
+
+.resource-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 0.9rem;
+}
+
+.resource-table th,
+.resource-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 8px;
+  text-align: left;
+}
+
+.resource-table th {
+  color: var(--accent-strong);
+  background: #fbfdfe;
+  font-weight: 700;
+}
+
+.viewer {
+  grid-column: 1 / -1;
+}
+
+.viewer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.viewer-header p {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.viewer-controls {
+  display: grid;
+  grid-template-columns: 110px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+#gzwebFrame {
+  width: 100%;
+  min-height: 600px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #f7fafc;
+}
+
+.logs {
+  grid-column: 1 / -1;
+}
+
+.logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+#logOutput {
+  min-height: 360px;
+  max-height: 540px;
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-controls,
+  .status-grid,
+  .grid.two {
+    grid-template-columns: 1fr;
+  }
+}

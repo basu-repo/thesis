@@ -1,0 +1,98 @@
+% Chapter 6
+
+\chapter{Discussion}
+\label{ch:discussion}
+
+This chapter interprets the results of the rule-based baseline, the offline learning pipeline, and the live learned-controller deployment. The discussion is organized around performance, model behavior, deployment implications, and the main limitations of the study.
+
+\section{Interpretation of Rule-Based and Learning-Based Performance}
+
+The rule-based and learning-based systems served different roles in the thesis, and the results show both the strength and the cost of that design choice. The rule-based baseline was operationally reliable: all eight recorded runs reached the goal, and the resulting dataset preserved not only nominal motion but also recovery behavior, as shown in Table~\ref{tab:rule_state_distribution}. This means the baseline was successful both as a navigation system and as a teacher.
+
+The learned controller, in contrast, should be interpreted as a feasibility result rather than as a full replacement for the rule-based stack. The latest recorded live run reached the goal, which confirms that the offline model could be transferred into live simulation. However, the recorded live evaluations remained less reliable than the rule-based baseline. This is an important outcome. It suggests that the learning stage succeeded in capturing a usable short-horizon motion policy, but that the complete closed-loop behavior still depended strongly on the surrounding control logic, especially in difficult local situations and in the final approach to the goal.
+
+Taken together, these results support a hybrid interpretation. The rule-based baseline remains the stronger solution when deterministic reliability is the primary requirement, whereas the learned controller shows that the motion policy can be approximated from data and used online under the same task structure. The thesis therefore demonstrates a successful transition from teacher policy to student policy, but not yet a full replacement of the teacher by the student in all mission conditions.
+
+\section{Analysis of the Best-Performing Model}
+
+The CNN--GNN--Transformer model achieved the best offline performance in Table~\ref{tab:offline_metric_summary}, and its live deployment produced the clearest evidence of learned maneuver execution. This outcome is meaningful for two reasons.
+
+First, the model combined three forms of information that were already central to the problem formulation: compact local sensing, relational context, and temporal evolution. The local scan-and-goal features captured the immediate navigational problem faced by the Husky. The graph component preserved the spatial relationship between the UGV and the two UAV scouts. The Transformer component then modeled short-horizon temporal structure without relying on a strictly recurrent memory update. The resulting combination appears to have been expressive enough for the task without becoming unnecessarily heavy.
+
+Second, the best-performing model was not the largest model. The CNN--GNN--LSTM--Transformer had more parameters and higher training cost, yet did not improve on the CNN--GNN--Transformer in the final offline test scores. This suggests that the best model was not simply the one with the most representational capacity, but the one with the most suitable balance between structure and complexity for the available dataset.
+
+The live logs also support this interpretation. In the latest successful run, the Husky spent most of the mission in \texttt{follow\_model} mode rather than in fallback goal forcing. This indicates that the selected model was not merely producing acceptable offline error values; it also produced trajectory predictions that the live controller could use over extended portions of the mission.
+
+\section{Contribution of CNN, GNN, and Temporal Modeling}
+
+The four learned models together provide a practical, if limited, ablation-style view of architectural contribution.
+
+The CNN--LSTM model already performed strongly. This indicates that a compact history of local scan-derived context and goal-relative features carries substantial predictive value on its own. In other words, the learning problem was not so difficult that graph reasoning was strictly necessary to produce a viable short-horizon predictor.
+
+The CNN--GNN--LSTM model added relational context and slightly improved ADE relative to CNN--LSTM, but it did not improve FDE. This suggests that graph context helped somewhat with average path quality, but did not by itself guarantee better endpoint consistency. The result also suggests that adding architectural structure can expose a trade-off between mid-horizon and final-step accuracy.
+
+The CNN--GNN--Transformer model produced the best balance across ADE, FDE, and RMSE. The most plausible interpretation is that the relational representation contributed useful multi-agent context, while the Transformer handled short temporal dependencies more effectively than the purely recurrent alternative for this dataset size and horizon length.
+
+The hybrid CNN--GNN--LSTM--Transformer remained competitive but did not improve on the simpler graph-transformer design. The most reasonable conclusion is not that LSTM components are unhelpful in general, but that for this specific task, horizon, and dataset size, the additional hybridization introduced more complexity than benefit.
+
+Overall, the results suggest the following ordering of practical contribution in this study: local scan-and-goal encoding was foundational, graph context was helpful, and the choice of temporal model materially influenced final quality. At the same time, the gains between the learned models were much smaller than the gap between any learned model and the constant-velocity baseline. That is a useful reminder that the largest performance jump came from learning the task at all, while the later gains came from refining how the task was represented.
+
+\section{Relationship Between Offline Scores and Online Behavior}
+
+One of the most important findings of the thesis is that good offline trajectory metrics did not automatically translate into equally strong online mission behavior. Offline, the learned models were tightly grouped and all clearly outperformed the constant-velocity baseline. Online, however, the difference between successful and unsuccessful live behavior depended on more than trajectory prediction error alone.
+
+The reason is structural. The learned model predicted a short future local trajectory, but the robot was ultimately driven by a live controller that converted that prediction into linear and angular commands while also honoring short-range safety overrides. This means the online behavior was the result of two coupled processes: prediction quality and control realization. A model could therefore be accurate in supervised testing but still produce weak mission performance if the downstream controller overrode it frequently or reacted poorly near obstacles and goal boundaries.
+
+The latest successful run shows partial alignment between offline and online performance. The best offline model also produced the clearest live \texttt{follow\_model} behavior, which supports the idea that offline metrics still carry meaningful information about real deployment quality. However, the same run also shows where the correspondence breaks down. During the last 2~m, the controller shifted into \texttt{caution} and then \texttt{avoid}, which means short-range obstacle logic temporarily dominated the learned policy. This is precisely the kind of behavior that ADE and FDE alone cannot fully capture.
+
+Therefore, the thesis supports a balanced conclusion: offline trajectory scores are necessary and useful, but they are not sufficient as a proxy for complete navigation quality. For this application, deployment evaluation must remain part of the model-selection process.
+
+\section{Compute Platform Implications}
+
+The runtime results in Chapter~\ref{ch:results} should be interpreted in the context of the actual machine used for the experiments. The full workflow was executed on a full development system with an Intel Core i7-10750H processor, 15~GiB of RAM, and a GeForce GTX~1660~Ti Mobile GPU. Therefore, the reported runtime and memory values describe the computational requirements of the thesis stack on the development platform used for experimentation, not on a constrained embedded or edge target.
+
+Within that context, the rule-based baseline was comparatively light and predictable. Its CPU load and memory footprint remained moderate across all eight runs, which is consistent with a controller built from deterministic logic, geometric interpretation, and relatively lightweight coordination rules.
+
+The learned live stack was also runnable on the same machine, but it was clearly more demanding. The latest successful learned run required substantially higher CPU utilization and nearly double the peak tracked memory footprint of the rule-based baseline. This does not imply that the system has already been validated for onboard edge deployment. Instead, it shows that the learned controller is feasible on the development machine used in this study, while also indicating that the learned stack imposes a noticeably heavier runtime cost than the baseline.
+
+Training has an even stronger platform implication. The learned models required around 1.4~GB of process memory and noticeably different training times, with the graph-based models imposing a substantially higher cost than the simpler CNN--LSTM. This reinforces the practical separation between model development and live execution: the full training workflow is naturally a workstation task, whereas runtime deployment remains the lighter of the two stages.
+
+For practical deployment, the main takeaway is therefore not a direct claim about edge readiness. The more defensible conclusion is that the current system runs successfully on the available development hardware, that learned deployment is materially more expensive than the rule-based baseline, and that any future move toward smaller onboard platforms would require further optimization and dedicated validation.
+
+\section{Communication Implications}
+
+The final result set now includes two communication-aware live runs using the relay profiles \texttt{WifiRelay} and \texttt{BluetoothRelay}. These experiments are important because they move the communication discussion from a purely architectural claim to a measured sensitivity result. In the implemented evaluation, the UGV continued to rely on its own direct local sensing for obstacle handling, while the UAV state information used by the learned controller was passed through the communication-impaired relay. Communication degradation therefore affected cooperative context quality rather than the UGV's direct collision sensing itself.
+
+The results show that the system is sensitive to communication quality, but not fragile under the two tested profiles. With the WiFi-style profile, the controller-side communication scale remained near 0.99 and the mission completed in 234.051~s of simulated time. With the harsher Bluetooth-style profile, the communication scale dropped to approximately 0.73 and the mission time increased to 249.112~s. Both runs still reached the goal, which suggests that the current controller can tolerate moderate degradation in UAV--UGV state sharing.
+
+This is a meaningful systems result. It indicates that the graph-based learned controller does use the UAV context, because reduced communication quality produces a measurable change in behavior. At the same time, the effect is not catastrophic because the UGV still possesses strong direct local sensing and because the cooperative inputs are only one part of the complete control stack. In other words, degraded communication weakens the quality of the relational input representation, but the UGV does not become blind or entirely dependent on the networked agents.
+
+The communication experiments also clarify the present scope of the result. The tested profiles correspond to moderate relay-style impairments, not to a broad communication study over many channel models. The thesis therefore demonstrates initial quantitative sensitivity to delay, jitter, and packet loss, but it does not yet establish a full robustness boundary for cooperative communication. That broader boundary would require additional profiles, longer campaign-level testing, and deeper analysis of how communication degradation interacts with obstacle-rich or recovery-heavy missions.
+
+\section{Limitations of the Study}
+
+The study has several important limitations.
+
+First, the dataset remained relatively small and structurally narrow. The final training set was generated from eight rule-based bag runs in a single simulated world, with a single overall mission style and a shared sensing configuration. Although the resulting sample count was large enough for short-horizon trajectory learning, the diversity of environments and mission conditions remained limited.
+
+Second, the learned models inherited the biases of the rule-based teacher. This is an intentional design choice in a teacher-to-student pipeline, but it also means that the student can only learn patterns that are expressed by the teacher. If the teacher overuses a certain maneuver or underrepresents another, the learned dataset will reflect that imbalance. The teacher-state distribution in Table~\ref{tab:rule_state_distribution} shows clearly that nominal \texttt{toGoal} and \texttt{terrain} behavior dominates the dataset.
+
+Third, the live learned controller was not a pure end-to-end learned system. The predicted trajectory still had to pass through a hand-coded control realization layer with safety overrides. This makes the deployment more realistic, but it also complicates the interpretation of failures. Some weak behaviors in live simulation were attributable to the learned trajectory itself, while others arose from the interaction between the model and the controller logic.
+
+Fourth, the communication-aware evaluation was completed only for two relay profiles. This is sufficient to show measurable communication sensitivity, but not sufficient to characterize the full robustness envelope of the cooperative system under a wider range of channel conditions.
+
+Finally, the UAV live behavior was not analyzed as a separate primary outcome. The thesis used the UAVs mainly as cooperative context providers and support agents, while mission success was defined entirely by UGV goal reaching. This was appropriate for scope control, but it means that the aerial side of the system was not evaluated as deeply as the ground side.
+
+\section{Threats to Validity}
+
+Several threats to validity should be acknowledged.
+
+\textbf{Internal validity.} The live evaluation stack evolved during development, particularly in the handling of safety overrides, recovery behavior, and final-approach control. Although the final chapter reports the latest consistent artifacts, iterative debugging introduces the risk that observed changes in behavior are partly due to controller tuning rather than only to model quality.
+
+\textbf{Construct validity.} Offline metrics such as ADE, FDE, and RMSE are appropriate for trajectory prediction, but they do not fully capture mission-level success. A model can score well offline and still behave poorly online if the predicted trajectory is difficult to realize in closed-loop control. This threat is partly mitigated by the inclusion of live simulation evaluation, but it remains conceptually important.
+
+\textbf{External validity.} The experiments were conducted in simulation, in a single Baylands world configuration, with one UGV platform type and one pair of UAV scouts. Generalization to different terrains, different sensing noise characteristics, different robot morphologies, or real-world outdoor deployment cannot be assumed directly from the present results.
+
+\textbf{Conclusion validity.} The number of recorded live learned runs remains modest, and only a subset of them reached the goal. The study therefore supports directional conclusions about feasibility, model ranking, and system behavior, but it does not yet support strong statistical claims about robustness across a broad deployment distribution.
+
+Taken together, these threats do not invalidate the thesis, but they do shape its scope. The contribution is best understood as a grounded demonstration of a cooperative teacher-to-student pipeline, an empirical comparison of several trajectory models under a shared dataset split, and a clear identification of the remaining gaps between strong offline prediction and robust online navigation.

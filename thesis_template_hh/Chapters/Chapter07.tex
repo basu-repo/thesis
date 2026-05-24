@@ -1,0 +1,65 @@
+% Chapter 7
+
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+This chapter concludes the thesis by summarizing the main findings, revisiting the research questions, and outlining practical implications and directions for future work.
+
+\section{Thesis Summary}
+This thesis investigated whether a learning-based trajectory prediction framework can support cooperative UAV--UGV maneuver generation in unstructured terrain while remaining compatible with a simulation-driven robotics workflow. The work began from a rule-based cooperative baseline in ROS~2 and Gazebo, in which the UGV acted as the primary maneuvering platform and two UAV scout agents provided supporting contextual information. That baseline was then used to generate training data, construct supervised trajectory-learning samples, and provide a reference for later comparison.
+
+The resulting dataset contained eight recorded bag runs, which produced 51,818 exported frame records and 51,706 supervised trajectory samples after sliding-window construction. These data were used to train and evaluate four learning-based model families in addition to a constant-velocity baseline. The tested models combined different sequential, graph-based, and attention-based structures in order to examine the effect of temporal modeling and UAV-related relational context on short-horizon UGV trajectory prediction.
+
+The experimental results showed that all learned models substantially outperformed the constant-velocity baseline in offline prediction accuracy. Among the learned models, the CNN--GNN--Transformer architecture achieved the strongest overall offline performance and was therefore selected for live simulation deployment. The live results showed that learning-based control was feasible and could reach the goal in simulation, but it was less reliable and more computationally demanding than the original rule-based baseline. The overall outcome of the thesis is therefore not that the learned controller fully replaces the rule-based system, but rather that it provides a promising nominal maneuver generator within a broader hybrid navigation framework.
+
+\section{Key Findings}
+\begin{itemize}
+    \item The rule-based cooperative baseline provided a robust teacher and operational reference. Across the eight recorded baseline runs, the UGV reached the goal in every run while also producing diverse maneuver states for later supervised learning.
+    \item The data-generation pipeline produced a usable learning dataset from the recorded simulations. The final corpus consisted of 51,818 exported frame records and 51,706 supervised samples, split reproducibly at episode level into five training episodes, one validation episode, and two test episodes.
+    \item All learned models clearly improved trajectory prediction relative to the constant-velocity baseline. The strongest offline model, CNN--GNN--Transformer, achieved an ADE of 0.0094 and an FDE of 0.0060, corresponding to improvements of 90.50\% and 95.67\%, respectively, over the constant-velocity reference.
+    \item The best-performing learned model did not emerge simply from model size. The CNN--GNN--Transformer outperformed both the simpler CNN--LSTM model and the larger CNN--GNN--LSTM--Transformer model, indicating that architectural suitability was more important than adding components indiscriminately.
+    \item Live redeployment of the learned controller was feasible but less reliable than the rule-based baseline. The learned system successfully reached the goal in a subset of recorded live runs, and the latest successful run spent most of its mission time in \texttt{follow\_model}, but final-approach stability and recovery behavior remained weaker than in the hand-crafted controller.
+    \item The learning-based pipeline required substantially more computation than the rule-based baseline. This was visible both during offline training and during live execution on the full development machine used in this study.
+    \item The communication-aware evaluation produced valid quantitative results under two relay profiles. The WiFi-style run preserved a communication scale close to 0.99 and reached the goal in 234.051~s of simulated time, whereas the harsher Bluetooth-style run reduced the communication scale to approximately 0.73 and increased simulated mission time to 249.112~s while still reaching the goal.
+\end{itemize}
+
+\section{Answers to the Research Questions}
+\textbf{PRQ1:} The learning-based trajectory prediction framework improved maneuver modeling substantially in offline evaluation and demonstrated that cooperative UAV--UGV behavior can be redeployed in live simulation from learned predictions. However, it did not surpass the rule-based baseline in operational reliability. The primary research question is therefore answered positively in terms of predictive accuracy and feasibility, but only partially in terms of full navigation replacement under realistic execution conditions.
+
+\medskip
+
+\textbf{SRQ1: Model Design:} The experiments showed that sequential, graph-based, and attention-based model choices do matter, but not all combinations are equally beneficial. A sequential CNN--LSTM model already provided strong performance, while the best results were obtained when graph-based relational context was combined with Transformer-style temporal modeling. The largest hybrid architecture was not the best performer, which suggests that effective architectural matching is more important than maximal structural complexity.
+
+\medskip
+
+\textbf{SRQ2: Cooperative Context:} Incorporating UAV-related relational information appears to be beneficial, but the effect is modest and architecture-dependent. The strongest evidence comes from the fact that the best-performing model used graph-based multi-agent context. At the same time, the simpler CNN--LSTM baseline remained competitive, which indicates that UAV context is useful but not sufficient on its own to guarantee superior performance.
+
+\medskip
+
+\textbf{SRQ3: System-Level Performance:} The best-performing learned model could be deployed back into live simulation and could complete the navigation task, which demonstrates end-to-end feasibility. Nevertheless, its live behavior remained more sensitive to controller realization, final-approach logic, and safety overrides than the original rule-based framework. In practice, the learned model behaved as a promising nominal maneuver generator rather than as a fully mature standalone navigation controller.
+
+\medskip
+
+\textbf{SRQ4: Communication Awareness:} This question can now be answered quantitatively, at least for the two tested relay profiles. Under the WiFi-style profile, the UGV retained near-nominal cooperative context quality and completed the mission with a communication scale close to 0.99. Under the harsher Bluetooth-style profile, the communication scale dropped to approximately 0.73 and the mission duration increased by roughly 15~s of simulated time, but the system still reached the goal. The thesis therefore concludes that the cooperative stack is measurably sensitive to communication degradation, yet remains operational under the tested delay, jitter, and packet-loss settings.
+
+\medskip
+
+\textbf{SRQ5: Runtime Feasibility:} The observed runtime and memory figures show that both the rule-based and learning-based pipelines are feasible on the full development machine used in this work, but the learned pipeline is notably heavier. The rule-based controller remained the lighter operational solution, while learned deployment and training introduced higher CPU, memory, and overall execution cost. This suggests that future deployment on smaller or embedded computing platforms will require additional optimization and validation.
+
+\section{Practical Implications}
+The results of this thesis suggest that rule-based and learning-based cooperative navigation should not be framed as mutually exclusive alternatives. In the present system, the rule-based controller proved valuable not only as a baseline but also as a teacher and safety reference. This makes hybrid supervisory control a practical direction: the learned model can generate nominal short-horizon maneuver intent, while rule-based logic can remain responsible for hard safety, recovery, and operational guarantees.
+
+The findings also show that offline trajectory metrics alone are not sufficient for judging deployment readiness. The CNN--GNN--Transformer model achieved the best offline accuracy, yet its live behavior still depended strongly on the surrounding control logic that converted predictions into executable commands. For practical robotic deployment, model evaluation should therefore combine offline prediction quality with online testing, stop behavior, recovery behavior, and resource usage.
+
+Finally, the compute measurements indicate that this work should be interpreted as a development-platform study rather than a direct embedded deployment result. The framework ran successfully on a full workstation-class machine, but future operational use on smaller platforms will require model, controller, and middleware optimization before strong deployment claims can be made.
+
+\section{Recommendations for Future Work}
+\begin{itemize}
+    \item Expand the dataset with more missions, more start--goal pairs, and broader terrain diversity so that the learned models experience a wider range of maneuver situations and failure cases.
+    \item Improve the live controller that converts predicted trajectories into motion commands, especially during final approach, obstacle-proximal behavior, and recovery transitions.
+    \item Evaluate explicit hybrid supervisory control, in which learned nominal maneuver generation is combined systematically with rule-based safety and recovery logic from the baseline framework.
+    \item Conduct controlled ablation studies on UAV relational input in order to isolate more precisely how much performance gain is attributable to multi-agent context rather than to temporal-modeling differences alone.
+    \item Extend the communication-aware evaluation beyond the current WiFi-style and Bluetooth-style relay profiles so that stronger channel degradation, alternative radio models, and longer campaign-level experiments can be analyzed quantitatively.
+    \item Investigate optimization strategies for deployment-oriented use, including lighter models, more efficient inference pipelines, and reduced middleware overhead on smaller computing platforms.
+    \item Extend the study to include richer evaluation of UAV behavior itself, since the present thesis focused primarily on UGV maneuver quality and treated the UAVs mainly as supporting cooperative agents.
+\end{itemize}

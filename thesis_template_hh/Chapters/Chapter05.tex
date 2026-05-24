@@ -1,0 +1,304 @@
+% Chapter 5
+
+\chapter{Results}
+\label{ch:results}
+
+This chapter reports the results obtained from the rule-based baseline, the dataset generation pipeline, the offline model-training workflow, the live deployment of the best learned model, and the recorded runtime and resource measurements.
+
+\section{Rule-Based Maneuver Results}
+
+The rule-based UAV--UGV baseline provided the teacher behavior used throughout the dataset-generation stage. Across the eight recorded rule-based runs, all runs reached the goal according to the saved resource summaries. The average wall-clock duration was 336.64~s, while the average simulated mission duration was 105.85~s. This confirms that the baseline was operationally stable enough to generate a complete teacher dataset before the learning stage was introduced.
+
+The exported teacher-state labels show that the baseline spent most of its time in nominal goal progression and terrain-following behavior. The largest single state was \texttt{toGoal}, followed by \texttt{terrain}. Recovery-related states were present but did not dominate the dataset. Taken together, \texttt{reverse}, \texttt{reversePause}, \texttt{recover}, \texttt{escapeTurn}, \texttt{escapeDrive}, and the smaller avoidance states accounted for 9.90\% of all supervised samples. This is important because the teacher data did not contain only ideal motion; it also preserved examples of local failure handling and recovery.
+
+\begin{table}[tbp]
+    \caption{Dominant teacher states in the rule-based dataset.}
+    \label{tab:rule_state_distribution}
+    \centering
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \renewcommand{\arraystretch}{1.12}
+    \begin{tabular}{@{}lrr@{}}
+        \toprule
+        \textbf{Teacher state} & \textbf{Count} & \textbf{Share (\%)} \\
+        \midrule
+        \texttt{toGoal} & 23,120 & 44.71 \\
+        \texttt{terrain} & 14,022 & 27.12 \\
+        \texttt{reached} & 9,447 & 18.27 \\
+        \texttt{reverse} & 1,630 & 3.15 \\
+        \texttt{reversePause} & 1,145 & 2.21 \\
+        \texttt{recover} & 792 & 1.53 \\
+        \texttt{escapeTurn + escapeDrive} & 1,059 & 2.05 \\
+        Other states & 491 & 0.95 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The rule logs also confirm that the recovery logic was genuinely exercised. The \texttt{Stuck recovery} trigger appeared on average 4.5 times per run, with the most difficult run producing 15 such events. Escape maneuvers were rarer, but they did occur in several runs. Therefore, the rule-based baseline did not merely produce direct goal-tracking samples; it also generated non-trivial examples of reverse, pause, and escape behavior.
+
+\section{Dataset Generation Results}
+
+The final dataset used in the learning pipeline was built from eight exported ROS bag runs. These eight runs produced 51,818 ordered frame records. After sliding-window extraction with \texttt{past\_len=10} and \texttt{future\_len=5}, the resulting supervised sample table contained 51,706 samples. The 112-frame difference corresponds exactly to the boundary loss induced by the fixed prediction window across the eight episodes.
+
+Episode sizes were not uniform. The smallest episode contributed 4,308 samples, while the largest contributed 8,755 samples. This variation is consistent with differences in route length, local recovery behavior, and the number of valid anchored windows that could be extracted from each bag.
+
+\begin{table}[tbp]
+    \caption{Final dataset and split summary used for offline model training and testing.}
+    \label{tab:dataset_result_summary}
+    \centering
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \renewcommand{\arraystretch}{1.12}
+    \begin{tabular}{@{}lr@{}}
+        \toprule
+        \textbf{Dataset item} & \textbf{Value} \\
+        \midrule
+        Recorded bag runs & 8 \\
+        Exported frame records & 51,818 \\
+        Supervised samples & 51,706 \\
+        Episode frame range & 4,322--8,769 \\
+        Episode sample range & 4,308--8,755 \\
+        Train / validation / test episodes & 5 / 1 / 2 \\
+        Train samples & 36,405 \\
+        Validation samples & 6,082 \\
+        Test samples & 9,219 \\
+        Split strategy & Episode-level, seed 42 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The final split retained the intended episode-level separation instead of mixing windows from the same run across multiple subsets. This means that test performance reflects generalization to held-out recorded runs rather than merely to held-out windows from already-seen trajectories.
+
+\section{Model Training Results}
+
+All learned models converged before the requested maximum of 30 epochs because early stopping terminated training once the validation loss stopped improving. The fastest learned model to train was the simpler CNN--LSTM architecture, while the CNN--GNN--LSTM model produced the longest training time because it continued improving for more epochs. The CNN--GNN--Transformer model converged relatively quickly and also yielded the best offline test metrics, which is why it later became the preferred live deployment candidate.
+
+\begin{table}[tbp]
+    \caption{Training summary for the learned trajectory-prediction models.}
+    \label{tab:model_training_summary}
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{3pt}
+    \renewcommand{\arraystretch}{1.12}
+    \begin{tabular}{@{}lrrrrr@{}}
+        \toprule
+        \textbf{Model} & \textbf{Params} & \textbf{Best epoch} & \textbf{Epochs run} & \textbf{Train time (s)} & \textbf{Peak GPU (MB)} \\
+        \midrule
+        CNN--LSTM & 113,834 & 9 & 14 & 161.28 & 35.60 \\
+        CNN--GNN--LSTM & 229,994 & 20 & 25 & 1,088.39 & 63.45 \\
+        CNN--GNN--Transformer & 403,050 & 8 & 13 & 583.47 & 60.09 \\
+        CNN--GNN--LSTM--Transformer & 551,530 & 9 & 14 & 650.16 & 70.31 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Two observations stand out from Table~\ref{tab:model_training_summary}. First, increasing model complexity did not monotonically improve training efficiency; the CNN--GNN--LSTM model had fewer parameters than the hybrid CNN--GNN--LSTM--Transformer model, yet took longer to train because it remained active for 25 epochs before early stopping. Second, the best-performing offline model was not the largest one. The CNN--GNN--Transformer achieved the strongest offline accuracy despite using fewer parameters than the hybrid model.
+
+\section{Offline Model Performance Results}
+
+Offline evaluation was performed on the held-out test split containing 9,219 supervised samples. The constant-velocity baseline was kept as a non-learned reference. All learned models substantially outperformed this baseline.
+
+\subsection{Constant-Velocity Baseline Results}
+
+The constant-velocity baseline produced an ADE of 0.0988, an FDE of 0.1386, and an RMSE of 0.1641. These values are an order of magnitude worse than those of the learned models, which confirms that the task cannot be explained adequately by straight extrapolation of local motion alone.
+
+\subsection{CNN-LSTM Results}
+
+The CNN--LSTM model reduced the baseline error sharply and produced an ADE of 0.0097, an FDE of 0.0073, and an RMSE of 0.0147. This result shows that even without graph reasoning, a compact scan-and-goal temporal model can learn short-horizon trajectory behavior from the teacher data.
+
+\subsection{CNN-GNN-LSTM Results}
+
+The CNN--GNN--LSTM model achieved an ADE of 0.0096, an FDE of 0.0078, and an RMSE of 0.0147. Its ADE was slightly better than that of the CNN--LSTM, but its FDE was worse. This indicates that simply adding relational graph context and temporal recurrence did not automatically produce the best endpoint accuracy on the held-out runs.
+
+\subsection{CNN-GNN-Transformer Results}
+
+The CNN--GNN--Transformer model achieved the best overall offline result: ADE 0.0094, FDE 0.0060, RMSE 0.0144, and test loss 0.0001. Relative to the CNN--LSTM model, this corresponds to a 2.9400\% improvement in ADE and a 17.8400\% improvement in FDE. Relative to the constant-velocity baseline, the improvement was 90.5000\% in ADE and 95.6700\% in FDE. For this reason, the CNN--GNN--Transformer was selected as the preferred learned controller for live deployment.
+
+\subsection{CNN-GNN-LSTM-Transformer Results}
+
+The hybrid CNN--GNN--LSTM--Transformer model achieved an ADE of 0.0098, an FDE of 0.0076, and an RMSE of 0.0144. Although this model remained competitive, it did not surpass the simpler CNN--GNN--Transformer. The result suggests that combining all available architectural components increased complexity without yielding a corresponding gain in test-set trajectory accuracy.
+
+\subsection{Comparative Score Summary}
+
+\begin{table}[tbp]
+    \caption{Offline test-set performance summary. Lower values indicate better performance.}
+    \label{tab:offline_metric_summary}
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.12}
+    \begin{tabular}{@{}lrrrr@{}}
+        \toprule
+        \textbf{Model} & \textbf{ADE} & \textbf{FDE} & \textbf{RMSE} & \textbf{Loss} \\
+        \midrule
+        Constant-velocity baseline & 0.0988 & 0.1386 & 0.1641 & 0.0988 \\
+        CNN--LSTM & 0.0097 & 0.0073 & 0.0147 & 0.0001 \\
+        CNN--GNN--LSTM & 0.0096 & 0.0078 & 0.0147 & 0.0001 \\
+        CNN--GNN--Transformer & \textbf{0.0094} & \textbf{0.0060} & \textbf{0.0144} & \textbf{0.0001} \\
+        CNN--GNN--LSTM--Transformer & 0.0098 & 0.0076 & 0.0144 & 0.0001 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Table~\ref{tab:offline_metric_summary} shows that the learned models cluster closely together, whereas the constant-velocity baseline is clearly separated from them. Within the learned family, the CNN--GNN--Transformer gave the most favorable balance of trajectory accuracy and endpoint accuracy. The hybrid CNN--GNN--LSTM--Transformer remained competitive, but its added complexity did not translate into the best final score.
+
+\section{Online Simulation Performance Results}
+
+\subsection{Learned-Controller Goal-Reaching Performance}
+
+The latest learned-controller evaluation log in the \texttt{09} stack is \texttt{trajectory\_model\_eval\_09\_20260523\_152638}. In this run, the learned controller reached the goal and the resource monitor recorded \texttt{finish\_reason=goal\_reached}. The same run completed in 225.68~s of simulated time and 310.13~s of wall time.
+
+This latest result confirms that the learned controller can complete the mission end-to-end in live simulation. The detailed maneuver pattern of this run is discussed in the following subsections.
+
+\subsection{Comparison with Rule-Based Navigation}
+
+The rule-based baseline remained superior in reliability and mission efficiency. All eight recorded rule-based runs reached the goal, whereas the learned controller reached the goal in only three of the recorded live attempts. The average simulated duration of the rule-based runs was 105.85~s, compared with 225.68~s for the final stable learned run and a much higher mean when all successful learned runs are averaged together.
+
+The learned controller did, however, show that the offline model was not merely producing plausible test-set predictions. In the final successful run, the Husky spent the overwhelming majority of the mission in \texttt{follow\_model} mode rather than \texttt{force\_goal}, which indicates that the live controller was genuinely executing learned trajectory targets instead of falling back to a predominantly hand-coded goal tracker.
+
+\subsection{Trajectory Smoothness and Stability}
+
+The strongest live run, \texttt{trajectory\_model\_eval\_09\_20260523\_152638}, remained in \texttt{follow\_model} for 257 logged status updates and entered \texttt{force\_goal} only 4 times. During the middle part of the run, the command stream evolved continuously and the UGV progressed steadily toward the goal with local predictions typically in the range of approximately 0.04--0.09 in the forward local direction.
+
+The weakest part of the learned behavior appeared in the last 2~m of the approach. At a remaining distance of 1.64~m, the state changed to \texttt{caution}; at 1.51~m, it changed to \texttt{avoid}; and arrival was then triggered immediately afterward. This means that the mid-course learned behavior was substantially better than earlier failed runs, but the final approach still remained sensitive to short-range obstacle logic and local heading corrections.
+
+\subsection{Failure and Recovery Cases}
+
+The earlier live logs reveal two recurring failure patterns. First, several runs became trapped in a repeated local \texttt{avoid}/\texttt{escape} loop near approximately $(-7.5,\,-284.6)$, where the front-clearance estimate repeatedly collapsed to values around 0.08--0.16~m. Second, a separate near-goal failure mode appeared in which the UGV passed the problematic local region but later drifted around the goal because the late-stage goal-tracking behavior remained too aggressive.
+
+These failure cases are important because they show that the principal weakness of the live learned deployment was not an absence of model predictions. Instead, the main issue was the interaction between learned short-horizon trajectory prediction and the hand-coded short-range safety override logic. The successful final run reduced this problem substantially, but did not eliminate it entirely.
+
+\section{Resource and Runtime Comparison Results}
+
+All runtime results in this section were produced on the same experimental machine. The system used an Intel Core i7-10750H processor with 6 physical cores and 12 logical threads, 15~GiB of system memory, Ubuntu~22.04.5~LTS, and an NVIDIA GeForce GTX~1660~Ti Mobile GPU with approximately 6~GB of available device memory. Reporting the runtime results together with the hardware context is important because the absolute execution times and memory footprints depend directly on the target platform.
+
+\begin{table}[tbp]
+    \caption{Hardware and software environment used for the runtime measurements.}
+    \label{tab:runtime_hardware_summary}
+    \centering
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \renewcommand{\arraystretch}{1.12}
+    \begin{tabular}{@{}ll@{}}
+        \toprule
+        \textbf{Component} & \textbf{Specification} \\
+        \midrule
+        Operating system & Ubuntu 22.04.5 LTS \\
+        CPU & Intel Core i7-10750H @ 2.60~GHz \\
+        CPU topology & 6 cores, 12 threads \\
+        System memory & 15~GiB RAM \\
+        GPU & NVIDIA GeForce GTX 1660 Ti Mobile \\
+        GPU memory & Approximately 6~GB \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Rule-Based Runtime and Resource Results}
+
+Table~\ref{tab:rule_based_runtime_runs} reports the runtime summary of each of the eight recorded rule-based runs. All eight runs reached the goal. The wall-clock times ranged from 207.03~s to 484.65~s, and the simulated mission durations ranged from 67.73~s to 148.57~s. Across the complete set, the average system CPU load was 40.16\% and the average peak tracked memory usage was 304.13~MB.
+
+\begin{table}[tbp]
+    \caption{Per-run runtime and resource summary for the rule-based baseline.}
+    \label{tab:rule_based_runtime_runs}
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{3pt}
+    \renewcommand{\arraystretch}{1.10}
+    \begin{tabular}{@{}lrrrr@{}}
+        \toprule
+        \textbf{Run} & \textbf{Wall time (s)} & \textbf{Sim time (s)} & \textbf{Avg CPU (\%)} & \textbf{Peak RSS (MB)} \\
+        \midrule
+        20260522\_201120 & 259.77 & 87.69 & 40.71 & 311.89 \\
+        20260522\_201807 & 207.03 & 67.73 & 40.98 & 286.66 \\
+        20260522\_202450 & 372.58 & 112.47 & 40.60 & 290.01 \\
+        20260522\_203346 & 252.57 & 77.61 & 38.28 & 283.23 \\
+        20260522\_204128 & 426.51 & 138.39 & 37.90 & 282.32 \\
+        20260523\_013029 & 267.32 & 87.11 & 38.13 & 284.61 \\
+        20260523\_013859 & 484.65 & 148.57 & 41.89 & 412.91 \\
+        20260523\_014930 & 422.71 & 127.25 & 42.76 & 281.41 \\
+        \midrule
+        Average & 336.64 & 105.85 & 40.16 & 304.13 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Learning-Based Runtime and Resource Results}
+
+The latest successful learned live run was \texttt{trajectory\_model\_eval\_09\_20260523\_152638}. This run reached the goal in 310.13~s of wall time and 225.68~s of simulated time. During this run, the average system CPU load was 86.45\% and the peak tracked memory usage was 584.06~MB. Compared with the average rule-based baseline, the latest learned run therefore required substantially more compute and almost double the peak tracked memory footprint.
+
+\begin{table}[tbp]
+    \caption{Runtime and resource summary for the latest successful learned live run.}
+    \label{tab:latest_live_runtime_summary}
+    \centering
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \renewcommand{\arraystretch}{1.12}
+    \begin{tabular}{@{}lr@{}}
+        \toprule
+        \textbf{Metric} & \textbf{Value} \\
+        \midrule
+        Run identifier & \texttt{20260523\_152638} \\
+        Finish reason & \texttt{goal\_reached} \\
+        Wall-clock duration & 310.13~s \\
+        Simulated duration & 225.68~s \\
+        Average system CPU & 86.45\% \\
+        Peak system CPU & 100.00\% \\
+        Average tracked RSS & 577.55~MB \\
+        Peak tracked RSS & 584.06~MB \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Taken together, the rule-based and learned runtime tables provide a clear estimate of the computational requirements of the experimental stack on the target machine. The rule-based controller was lighter and more predictable, whereas the latest learned live run remained feasible on the same hardware but required substantially higher CPU load and memory usage.
+
+\subsection{Training-Time Runtime and Resource Results}
+
+Training was the most resource-intensive stage in the complete workflow. Table~\ref{tab:training_resource_comparison} compares the measured training cost of the learned models using the latest recorded runs. The constant-velocity baseline is not included in this table because it does not require model training.
+
+\begin{table}[tbp]
+    \caption{Training-time runtime and resource comparison for the learned models.}
+    \label{tab:training_resource_comparison}
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{3pt}
+    \renewcommand{\arraystretch}{1.10}
+    \begin{tabular}{@{}lrrrr@{}}
+        \toprule
+        \textbf{Model} & \textbf{Train time (s)} & \textbf{Epochs run} & \textbf{Peak RSS (MB)} & \textbf{Peak GPU (MB)} \\
+        \midrule
+        CNN--LSTM & 161.28 & 14 & 1388.14 & 35.60 \\
+        CNN--GNN--LSTM & 1088.39 & 25 & 1409.97 & 63.45 \\
+        CNN--GNN--Transformer & 583.47 & 13 & 1408.46 & 60.09 \\
+        CNN--GNN--LSTM--Transformer & 650.16 & 14 & 1412.56 & 70.31 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+All learned models used approximately 1.39--1.41~GB of process memory during training, so the main differences are seen in training time and GPU allocation. The fastest learned model was CNN--LSTM at 161.28~s, while the slowest was CNN--GNN--LSTM at 1,088.39~s. Peak GPU allocation ranged from 35.60~MB for CNN--LSTM to 70.31~MB for CNN--GNN--LSTM--Transformer. Overall, the graph-based and hybrid models increased training cost substantially, even though the final offline accuracy gains remained relatively modest.
+
+\section{Communication-Aware Evaluation Results}
+
+Communication-aware live evaluation was completed using the two relay profiles defined in the basic OMNeT++ configuration: \texttt{WifiRelay} and \texttt{BluetoothRelay}. In these runs, the UGV retained direct local obstacle sensing, while the UAV state information consumed by the learned controller was routed through the communication-impaired bridge. This means that the communication experiment tested degradation in cooperative UAV--UGV state sharing rather than degradation of the UGV's own local safety sensing.
+
+\begin{table}[tbp]
+    \caption{Communication-aware live-evaluation summary for the two tested relay profiles.}
+    \label{tab:communication_profile_summary}
+    \centering
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.12}
+    \begin{tabular}{@{}lrrrrrr@{}}
+        \toprule
+        \textbf{Profile} & \textbf{Delay (s)} & \textbf{Jitter (s)} & \textbf{Drop prob.} & \textbf{Comm scale} & \textbf{Sim time (s)} & \textbf{Finish} \\
+        \midrule
+        WifiRelay & 0.04 & 0.01 & 0.01 & 0.99 & 234.051 & goal\_reached \\
+        BluetoothRelay & 0.12 & 0.03 & 0.03 & 0.73 & 249.112 & goal\_reached \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The WiFi-style run completed the mission with near-nominal communication scaling. Across the mission, the logged RSSI remained approximately between $-70.46$ and $-71.43$~dBm, SNIR remained approximately between $17.65$ and $16.93$~dB, and the reported link distance grew from roughly 11.52~m to 35.79~m as the mission developed. The controller-side communication scale remained at approximately 0.99 throughout the run, which indicates that the WiFi profile produced only mild degradation of the UAV relational context.
+
+The Bluetooth-style run produced a materially stronger degradation. In that case, the logged RSSI remained approximately between $-85.46$ and $-86.43$~dBm, SNIR remained approximately between $7.65$ and $6.93$~dB, and the communication scale remained close to 0.73. Even under this harsher profile, the learned controller still reached the goal. However, the mission duration increased from 234.051~s to 249.112~s of simulated time, which corresponds to an increase of roughly 15.06~s relative to the WiFi-style run.
+
+The communication-aware results therefore support a moderate but clear conclusion. Under the tested relay conditions, degraded UAV--UGV communication reduced the quality of the relational context provided to the learned controller, but it did not prevent mission completion. The stronger Bluetooth-style profile slowed the mission and lowered the controller's effective communication scale, yet the direct local UGV sensing remained sufficient to maintain overall task completion. In the present system, communication degradation therefore appears first as a reduction in cooperative context quality and mission efficiency rather than as an immediate loss of navigational feasibility.
