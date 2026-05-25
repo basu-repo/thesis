@@ -125,6 +125,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--headless", action="store_true", help="Run Gazebo server-only.")
     parser.add_argument("--no-rviz", action="store_true", help="Skip RViz.")
     parser.add_argument("--no-camera", action="store_true", help="Skip the image viewer.")
+    parser.add_argument("--autorun", action="store_true", help="Automatically unpause Gazebo after node setup.")
     parser.add_argument("--target-index", type=int, default=4, help="Future waypoint index to follow.")
     parser.add_argument("--enable-omnet", action="store_true", help="Enable external OMNeT communication co-simulation.")
     parser.add_argument(
@@ -444,7 +445,10 @@ def main() -> int:
     log_event("==============================")
     log_event("09 LIVE TRAJECTORY MODEL MODE ENABLED")
     log_event("==============================")
-    log_event("Gazebo world will be auto-started after node setup.")
+    if args.autorun:
+        log_event("Gazebo world will be auto-started after node setup.")
+    else:
+        log_event("Gazebo world will remain paused until Play is pressed or --autorun is used.")
     log_event("Press Ctrl+C here when done.")
     log_event(
         f"Scout altitude target: z={UAV_SCOUT_ALTITUDE_Z:.2f}, "
@@ -667,11 +671,14 @@ def main() -> int:
         executor.add_node(node)
 
     resource_monitor.set_tracked_processes([gz, bridge, rviz, camera_view, omnet])
-    log_event("Auto-starting Gazebo world...")
-    if set_world_running(WORLD_NAME):
-        log_event("Gazebo world unpaused successfully.")
+    if args.autorun:
+        log_event("Auto-starting Gazebo world...")
+        if set_world_running(WORLD_NAME):
+            log_event("Gazebo world unpaused successfully.")
+        else:
+            log_event("WARNING: Failed to auto-start Gazebo world. Manual Play may still be required.")
     else:
-        log_event("WARNING: Failed to auto-start Gazebo world. Manual Play may still be required.")
+        log_event("Autorun disabled; waiting for manual Gazebo Play.")
 
     export_result = None
     try:
