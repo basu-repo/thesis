@@ -948,6 +948,7 @@
         </geometry>
       </visual>
       <light name="flashlight_flashlight_light_source_lamp_light" type="spot">
+        <visualize>false</visualize>
         <pose frame="">0.0 0.0 0.065 3.141592653589793 1.5707963267948966 -0.0015926535897931</pose>
         <attenuation>
           <range>50</range>
