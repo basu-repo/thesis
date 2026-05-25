@@ -1057,7 +1057,7 @@
     </plugin>
 
     <link name="camera_mount_blue_label">
-      <pose>0.4240 0 0.6728 0 0 0</pose>
+      <pose>0.424 0 0.377 0 0 0</pose>
       <collision name="collision">
         <geometry>
           <cylinder>

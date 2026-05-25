@@ -948,6 +948,7 @@
         </geometry>
       </visual>
       <light name="flashlight_flashlight_light_source_lamp_light" type="spot">
+        <visualize>false</visualize>
         <pose frame="">0.0 0.0 0.065 3.141592653589793 1.5707963267948966 -0.0015926535897931</pose>
         <attenuation>
           <range>50</range>
@@ -1054,6 +1055,35 @@
 	<wheel_radius>0.165</wheel_radius>
 	<topic>/cmd_vel_husky2</topic>
     </plugin>
+
+    <link name="camera_mount_blue_label">
+      <pose>0.424 0 0.377 0 0 0</pose>
+      <collision name="collision">
+        <geometry>
+          <cylinder>
+            <radius>0.014</radius>
+            <length>0.10</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <cylinder>
+            <radius>0.025</radius>
+            <length>0.10</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.12 0.36 0.95 1.0</ambient>
+          <diffuse>0.12 0.36 0.95 1.0</diffuse>
+          <emissive>0.048 0.144 0.38 1.0</emissive>
+        </material>
+      </visual>
+    </link>
+    <joint name="camera_mount_blue_label_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>camera_mount_blue_label</child>
+    </joint>
     
   
     <link name="flag_marker_blue">
