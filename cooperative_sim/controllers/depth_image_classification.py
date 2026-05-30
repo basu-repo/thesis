@@ -16,7 +16,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
 
-def _clamp_int(value: int, lower: int, upper: int) -> int:
+def _clamp_int(value, lower, upper):
     return max(lower, min(value, upper))
 
 
@@ -25,20 +25,23 @@ class RuleBasedDepthClassifier(Node):
 
     def __init__(
         self,
-        node_name: str,
-        image_topic: str,
-        classification_topic: str,
-        center_metrics_topic: str,
-        near_depth_m: float = 4.0,
-        far_clear_depth_m: float = 10.0,
-        valid_min_ratio: float = 0.20,
-        abrupt_edge_ratio_block: float = 0.18,
-        smooth_gradient_ratio_terrain: float = 0.08,
-        terrain_min_depth_m: float = 0.90,
-        broad_close_block_depth_m: float = 0.75,
-        center_anomaly_threshold_m: float = 0.12,
-        region_top_ratio: float = 0.35,
-        region_bottom_ratio: float = 0.95,
+        # Constructor parameters configure ROS topics and rule thresholds.
+        # Topic names connect the node to the simulation, while threshold values
+        # decide when depth-image regions are treated as open, terrain, or block.
+        node_name: str,  # ROS node name.
+        image_topic: str,  # Input depth-image topic.
+        classification_topic: str,  # Output topic for terrain/block/open label.
+        center_metrics_topic: str,  # Output topic for compact center-depth metrics.
+        near_depth_m: float = 4.0,  # Depth below this is treated as near.
+        far_clear_depth_m: float = 10.0,  # Depth above this is treated as clear/far.
+        valid_min_ratio: float = 0.20,  # Minimum valid-pixel ratio needed to trust a region.
+        abrupt_edge_ratio_block: float = 0.18,  # Sudden depth-change ratio used for block detection.
+        smooth_gradient_ratio_terrain: float = 0.08,  # Smooth depth-change ratio used for terrain detection.
+        terrain_min_depth_m: float = 0.90,  # Minimum depth before a region can be considered terrain.
+        broad_close_block_depth_m: float = 0.75,  # Very close broad center depth means blocking obstacle.
+        center_anomaly_threshold_m: float = 0.12,  # Center-depth difference threshold for anomaly detection.
+        region_top_ratio: float = 0.35,  # Top crop boundary as a fraction of image height.
+        region_bottom_ratio: float = 0.95,  # Bottom crop boundary as a fraction of image height.
     ):
         super().__init__(node_name)
         self.image_topic = image_topic
@@ -71,9 +74,9 @@ class RuleBasedDepthClassifier(Node):
             return None
 
         if msg.encoding == "32FC1":
-            arr = np.frombuffer(msg.data, dtype=np.float32)
+            arr = np.frombuffer(msg.data, dtype=np.float32) # already in meters
         elif msg.encoding == "16UC1":
-            arr = np.frombuffer(msg.data, dtype=np.uint16).astype(np.float32) * 0.001
+            arr = np.frombuffer(msg.data, dtype=np.uint16).astype(np.float32) * 0.001 # convert mm to m
         else:
             self.get_logger().warn(f"Unsupported depth encoding: {msg.encoding}")
             return None

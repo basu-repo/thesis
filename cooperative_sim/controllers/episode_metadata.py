@@ -28,7 +28,7 @@ class EpisodeMetadataPublisher(Node):
         self.timer = self.create_timer(1.0, self.publish_all)
         self.publish_all()
 
-    def make_pose(self, xyz: tuple[float, ...]) -> PoseStamped:
+    def make_pose(self, xyz: tuple[float, float, float]) -> PoseStamped:
         msg = PoseStamped()
         msg.header.frame_id = self.world_name
         msg.pose.position.x = float(xyz[0])

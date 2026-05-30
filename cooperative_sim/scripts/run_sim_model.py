@@ -5,16 +5,16 @@ metadata, optionally records a bag, and connects the working CNN-based Husky
 controller to the live odometry stream.
 """
 
-import datetime
-import argparse
-import math
-import os
-import signal
-import subprocess
-import sys
-import time
-from contextlib import suppress
-from pathlib import Path
+import datetime  # Creates timestamped run names and log filenames.
+import argparse  # Reads command-line options such as --headless and --no-bag.
+import math  # Computes yaw angles and coordinate geometry.
+import os  # Accesses environment variables and process-level OS functions.
+import signal  # Sends/handles stop signals for launched processes.
+import subprocess  # Starts external commands such as Gazebo, RViz, and rosbag.
+import sys  # Updates Python import paths for local project modules.
+import time  # Adds waits and timing delays during launch/shutdown.
+from contextlib import suppress  # Ignores expected cleanup errors safely.
+from pathlib import Path  # Builds reliable filesystem paths.
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 RULE_BASED_ROOT = SCRIPT_DIR.parent
@@ -22,20 +22,19 @@ GUI_CONFIG = RULE_BASED_ROOT.parent / "simulation" / "gui" / "baylands_gui.confi
 if str(RULE_BASED_ROOT) not in sys.path:
     sys.path.insert(0, str(RULE_BASED_ROOT))
 
-import rclpy
-from rclpy.executors import MultiThreadedExecutor
+import rclpy  # ROS 2 Python client library for nodes and communication.
+from rclpy.executors import MultiThreadedExecutor  # Runs multiple ROS nodes together.
 
-from controllers.episode_metadata import EpisodeMetadataPublisher
-from controllers.depth_image_classification import RuleBasedDepthClassifier
-from controllers.hazard_map_builder import HazardMapBuilderNode
-from controllers.obstacle_detection import ObstacleDetectionNode
-from controllers.resource_usage_monitor import RunResourceMonitor
-from controllers.husky_model_driver import ModelHuskyDriver
-from controllers.scout_coordinator import ScoutCoordinatorNode
-from controllers.ugv_decision_fuser import UgvDecisionFuser
-from controllers.uav_obstacle_detection import UavObstacleDetectionNode
-from controllers.uav_scout_driver import UavScoutDriver
-from project_paths import MODELS_DIR, OMNET_DIR, RVIZ_CONFIG_PATH, WORLD_SDF_PATH
+from controllers.episode_metadata import EpisodeMetadataPublisher  # Publishes run metadata for dataset traceability.
+from controllers.depth_image_classification import RuleBasedDepthClassifier  # Converts depth/image cues into terrain or block labels.
+from controllers.hazard_map_builder import HazardMapBuilderNode  # Fuses UAV/context hazard information for the UGV.
+from controllers.obstacle_detection import ObstacleDetectionNode  # Detects local UGV obstacles from scan/point-cloud data.
+from controllers.resource_usage_monitor import RunResourceMonitor  # Records CPU, memory, and runtime resource usage.
+from controllers.husky_model_driver import ModelHuskyDriver  # Runs the rule-based Husky UGV motion controller.
+from controllers.scout_coordinator import ScoutCoordinatorNode  # Coordinates UAV scout status and support context.
+from controllers.uav_obstacle_detection import UavObstacleDetectionNode  # Detects UAV-side forward obstacles.
+from controllers.uav_scout_driver import UavScoutDriver  # Controls UAV takeoff, slot following, and landing behavior.
+from project_paths import MODELS_DIR, OMNET_DIR, RVIZ_CONFIG_PATH, WORLD_SDF_PATH  # Central paths for models, OMNeT++, RViz, and world file.
 
 
 WORLD = str(WORLD_SDF_PATH)
@@ -60,7 +59,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-bag", action="store_true", help="Disable ROS bag recording for the run.")
     parser.add_argument("--no-depth", action="store_true", help="Disable UGV depth-image classification.")
     parser.add_argument("--no-hazard-map", action="store_true", help="Disable hazard-map fusion.")
-    parser.add_argument("--enable-decision-fuser", action="store_true", help="Enable the UGV decision-fuser node.")
     parser.add_argument("--disable-uavs", action="store_true", help="Disable both UAV scout agents.")
     parser.add_argument("--disable-second-uav", action="store_true", help="Disable only the second UAV scout agent.")
     parser.add_argument("--enable-lidar-path-planning", action="store_true", help="Enable lidar path-planning mode.")
@@ -265,7 +263,6 @@ ENABLE_LIDAR_STRAIGHT_APPROACH = True
 ENABLE_LIDAR_PATH_PLANNING = False
 ENABLE_DEPTH_IMAGE_CLASSIFICATION = True
 ENABLE_HAZARD_MAP = True
-ENABLE_UGV_DECISION_FUSER = False
 
 ENABLE_HEADLESS = bool(ARGS.headless)
 ENABLE_BAG_RECORDING = not bool(ARGS.no_bag)
@@ -275,7 +272,6 @@ ENABLE_LIDAR_STRAIGHT_APPROACH = not bool(ARGS.disable_lidar_straight_approach)
 ENABLE_LIDAR_PATH_PLANNING = bool(ARGS.enable_lidar_path_planning)
 ENABLE_DEPTH_IMAGE_CLASSIFICATION = not bool(ARGS.no_depth)
 ENABLE_HAZARD_MAP = not bool(ARGS.no_hazard_map)
-ENABLE_UGV_DECISION_FUSER = bool(ARGS.enable_decision_fuser)
 DEBUG_ISOLATE_HUSKY_LOCAL = bool(ARGS.debug_isolate_husky_local)
 
 if ARGS.disable_uavs:
@@ -530,7 +526,6 @@ log_event(
     f"bag={ENABLE_BAG_RECORDING}, "
     f"depth={ENABLE_DEPTH_IMAGE_CLASSIFICATION}, "
     f"hazard_map={ENABLE_HAZARD_MAP}, "
-    f"decision_fuser={ENABLE_UGV_DECISION_FUSER}, "
     f"uav1={ENABLE_UAV}, "
     f"uav2={ENABLE_SECOND_UAV}"
 )
@@ -886,7 +881,6 @@ obstacle_detector2 = None
 scout_coordinator = None
 hazard_map_builder = None
 husky2_depth_classifier = None
-ugv_decision_fuser = None
 if ENABLE_SECOND_HUSKY:
     husky2_obstacle_action_topic = "/husky_2/obstacle_action"
     husky2_obstacle_clearance_topic = "/husky_2/obstacle_clearance"
@@ -919,7 +913,9 @@ if ENABLE_SECOND_HUSKY:
         gap_profile_topic=husky2_gap_profile_topic,
         hazard_guidance_topic="/husky_2/hazard_guidance" if ENABLE_HAZARD_MAP else None,
         depth_classification_topic="/husky_2/depth_classification" if ENABLE_DEPTH_IMAGE_CLASSIFICATION else None,
-        final_decision_topic="/husky_2/final_decision" if ENABLE_UGV_DECISION_FUSER else None,
+        # The final run does not use an external UGV decision-fuser node.
+        # The driver applies its own internal priority logic using obstacle,
+        # depth, terrain, and hazard-guidance topics directly.
         state_topic=husky2_controller_state_topic,
         use_lidar_straight_approach=ENABLE_LIDAR_STRAIGHT_APPROACH,
         use_lidar_path_planning=ENABLE_LIDAR_PATH_PLANNING,
@@ -949,15 +945,6 @@ if ENABLE_SECOND_HUSKY:
             image_topic=f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/camera_front/depth_image",
             classification_topic="/husky_2/depth_classification",
             center_metrics_topic="/husky_2/depth_classification_metrics",
-        )
-    if ENABLE_UGV_DECISION_FUSER:
-        ugv_decision_fuser = UgvDecisionFuser(
-            node_name="husky_2_decision_fuser",
-            obstacle_action_topic=husky2_obstacle_action_topic,
-            obstacle_clearance_topic=husky2_obstacle_clearance_topic,
-            hazard_guidance_topic="/husky_2/hazard_guidance",
-            depth_classification_topic="/husky_2/depth_classification",
-            decision_topic="/husky_2/final_decision",
         )
 follower = None
 if ENABLE_UAV:
@@ -1134,8 +1121,6 @@ if hazard_map_builder is not None:
     executor.add_node(hazard_map_builder)
 if husky2_depth_classifier is not None:
     executor.add_node(husky2_depth_classifier)
-if ugv_decision_fuser is not None:
-    executor.add_node(ugv_decision_fuser)
 
 if ENABLE_CAMERA_VIEW:
     log_event("Waiting briefly before starting camera viewer so image topics are available...")

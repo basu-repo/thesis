@@ -42,7 +42,6 @@ class ModelHuskyDriver(Node):
         gap_profile_topic: str | None = None,
         hazard_guidance_topic: str | None = None,
         depth_classification_topic: str | None = None,
-        final_decision_topic: str | None = None,
         state_topic: str | None = None,
         use_lidar_straight_approach: bool = False,
         use_lidar_path_planning: bool = True,
@@ -125,7 +124,6 @@ class ModelHuskyDriver(Node):
         self.gap_profile_topic = gap_profile_topic
         self.hazard_guidance_topic = hazard_guidance_topic
         self.depth_classification_topic = depth_classification_topic
-        self.final_decision_topic = final_decision_topic
         self.state_topic = state_topic
         self.use_lidar_straight_approach = bool(use_lidar_straight_approach)
         self.use_lidar_path_planning = bool(use_lidar_path_planning)
@@ -221,8 +219,6 @@ class ModelHuskyDriver(Node):
             self.create_subscription(String, self.hazard_guidance_topic, self.hazard_guidance_cb, 10)
         if self.depth_classification_topic is not None:
             self.create_subscription(String, self.depth_classification_topic, self.depth_classification_cb, 10)
-        if self.final_decision_topic is not None:
-            self.create_subscription(String, self.final_decision_topic, self.final_decision_cb, 10)
 
         parts = [part for part in self.odom_topic.split("/") if part]
         self.model_frame_id = parts[1] if len(parts) >= 2 else None
@@ -241,7 +237,6 @@ class ModelHuskyDriver(Node):
         self.gap_passable = False
         self.hazard_guidance = "clear"
         self.hazard_terrain_hint = False
-        self.final_decision = "clear"
         self.depth_overall = "unknown"
         self.depth_left_class = "unknown"
         self.depth_center_class = "unknown"
@@ -402,9 +397,6 @@ class ModelHuskyDriver(Node):
         self.hazard_guidance = msg.data.strip().lower() if msg.data else "clear"
         self.hazard_terrain_hint = self.hazard_guidance.startswith("terrain_sure_front")
 
-    def final_decision_cb(self, msg: String):
-        self.final_decision = msg.data.strip().lower() if msg.data else "clear"
-
     def depth_classification_cb(self, msg: String):
         text = msg.data.strip().lower() if msg.data else ""
         parsed: dict[str, str] = {}
@@ -502,13 +494,9 @@ class ModelHuskyDriver(Node):
         return float(self.obstacle_clearance[2])
 
     def _obstacle_active(self) -> bool:
-        if self.final_decision_topic is not None:
-            return self.final_decision.startswith("block")
         return (self.obstacle_action or "clear") != "clear"
 
     def _forward_clear_consensus(self) -> bool:
-        if self.final_decision_topic is not None:
-            return self.final_decision == "clear"
         return (not self._obstacle_active()) and self.hazard_guidance == "clear"
 
     def _depth_supports_terrain(self) -> bool:
@@ -640,11 +628,6 @@ class ModelHuskyDriver(Node):
         return total
 
     def _choose_avoid_direction(self) -> str:
-        if self.final_decision_topic is not None:
-            if self.final_decision.endswith("left"):
-                return "left"
-            if self.final_decision.endswith("right"):
-                return "right"
         if self.obstacle_action.endswith("left"):
             return "left"
         if self.obstacle_action.endswith("right"):
@@ -665,8 +648,7 @@ class ModelHuskyDriver(Node):
 
     def _lidar_only_mode(self) -> bool:
         return (
-            self.final_decision_topic is None
-            and not self.use_depth_classification
+            not self.use_depth_classification
             and not self.use_hazard_map
         )
 
@@ -1088,8 +1070,6 @@ class ModelHuskyDriver(Node):
         return bias
 
     def _terrain_commit_active(self, remaining: float) -> bool:
-        if self.final_decision_topic is not None:
-            return self.final_decision == "terrain" and remaining > self.goal_tolerance
         has_terrain_signal = self.terrain_climbable or self.hazard_terrain_hint or self._depth_supports_terrain()
         if not has_terrain_signal:
             return False
