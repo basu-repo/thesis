@@ -1,17 +1,14 @@
-"""Publish episode start and goal poses for every simulated agent.
-
-These topics make each run self-describing in recorded bags and let the
-exporters reconstruct where every agent started and what target it was given.
-"""
+# Publish episode start and goal poses for every simulated agent.
+# These topics make each run self-describing in recorded bags and let the exporters reconstruct where every agent started and what target it was given.
+# Continuously publish start/goal poses so late subscribers still receive them.
 
 from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 
 
 class EpisodeMetadataPublisher(Node):
-    """Continuously publish start/goal poses so late subscribers still receive them."""
 
-    def __init__(self, world_name: str, start_goals: dict[str, dict[str, tuple[float, ...]]]):
+    def __init__(self, world_name: str, start_goals: dict[str, dict[str, tuple[float, float, float]]]):
         super().__init__("episode_metadata_publisher")
         self.world_name = world_name
         self.start_goals = start_goals

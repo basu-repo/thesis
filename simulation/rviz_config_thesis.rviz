@@ -43,10 +43,10 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
-    - Alpha: 0.5
-      Cell Size: 1
+    - Alpha: 0.8500000238418579
+      Cell Size: 0.5
       Class: rviz_default_plugins/Grid
-      Color: 255; 255; 255
+      Color: 80; 80; 80
       Enabled: true
       Line Style:
         Line Width: 0.029999999329447746
@@ -58,7 +58,7 @@ Visualization Manager:
         Y: 0
         Z: 0
       Plane: XY
-      Plane Cell Count: 10
+      Plane Cell Count: 128
       Reference Frame: <Fixed Frame>
       Value: true
     - Alpha: 1
@@ -179,7 +179,7 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
-    - Alpha: 0.699999988079071
+    - Alpha: 0.949999988079071
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Draw Behind: false
@@ -198,7 +198,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /husky_2/hazard_map_updates
       Value: true
-    - Alpha: 0.3499999940395355
+    - Alpha: 0.6499999761581421
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Draw Behind: true
@@ -219,7 +219,7 @@ Visualization Manager:
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 48; 48; 48
+    Background Color: 255; 255; 255
     Fixed Frame: base_link
     Frame Rate: 30
   Name: root

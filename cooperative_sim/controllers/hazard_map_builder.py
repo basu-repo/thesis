@@ -1,4 +1,4 @@
-"""Shared local 2D hazard map builder for UAV/UGV fusion."""
+# Shared local 2D hazard map builder for UAV/UGV fusion
 
 import math
 
@@ -10,12 +10,15 @@ from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 
 
-def quaternion_to_yaw(x: float, y: float, z: float, w: float) -> float:
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+# Converts Gazebo/TF quaternion orientation into a yaw angle.
+# Yaw is the ground-plane heading used to understand which direction the UGV faces.
+def quaternion_to_yaw(x, y, z, w):
+    siny_cosp = 2 * (w * z + x * y)
+    cosy_cosp = 1 - 2 * (y * y + z * z)
     return math.atan2(siny_cosp, cosy_cosp)
 
-
+# Searches a TF message and extracts the transform for the selected robot.
+# The base_link frame is preferred because it represents the main body of the UGV.
 def extract_model_transform(msg: TFMessage, model_name: str):
     selected_model = None
     selected_base_link = None
@@ -37,8 +40,9 @@ def extract_model_transform(msg: TFMessage, model_name: str):
 
 
 class HazardMapBuilderNode(Node):
-    """Fuse UAV scout previews and Husky local cues into a small 2D hazard map."""
-
+    # Initializes the hazard-map node.
+    # This sets the map size, resolution, hazard parameters, ROS publishers,
+    # ROS subscribers, timer, and storage for live and memory maps.
     def __init__(
         self,
         node_name: str,
@@ -115,6 +119,9 @@ class HazardMapBuilderNode(Node):
         self.timer = self.create_timer(publish_period, self.publish_updates)
         self.get_logger().info("Hazard map builder started.")
 
+
+    # Receives the world pose/TF message and stores the Husky position and yaw.
+    # This keeps the local hazard map aligned with the current UGV pose.
     def world_pose_cb(self, msg: TFMessage):
         husky_tf = extract_model_transform(msg, self.husky_name)
         if husky_tf is None:
@@ -122,29 +129,39 @@ class HazardMapBuilderNode(Node):
         t = husky_tf.transform.translation
         r = husky_tf.transform.rotation
         self.husky_world_state = {
-            "x": float(t.x),
-            "y": float(t.y),
-            "z": float(t.z),
+            "x": t.x,
+            "y": t.y,
+            "z": t.z,
             "yaw": quaternion_to_yaw(r.x, r.y, r.z, r.w),
         }
 
+    # Receives the Husky obstacle state, such as clear or blocked.
+    # This is the UGV's own local obstacle information.
     def husky_obstacle_action_cb(self, msg: String):
         self.husky_obstacle_action = msg.data.strip().lower() if msg.data else "clear"
 
-    def husky_obstacle_clearance_cb(self, msg: Vector3):
-        self.husky_front_clearance = float(msg.x)
 
+    # Receives the Husky front clearance distance.
+    # This tells how far the nearest front obstacle is from the UGV.
+    def husky_obstacle_clearance_cb(self, msg: Vector3):
+        self.husky_front_clearance = msg.x
+
+
+    # Creates a callback for one UAV scout topic.
+    # Each UAV report stores distance, lateral offset, and blocked/not-blocked status.
     def _make_scout_report_cb(self, name: str):
         def cb(msg: Vector3):
-            distance = float(msg.x)
+            distance = msg.x
             self.scout_reports[name] = {
                 "distance": distance,
-                "lateral": float(msg.y),
+                "lateral": msg.y,
                 "blocked": bool(msg.z >= 0.5 and math.isfinite(distance) and distance < 998.0),
             }
 
         return cb
 
+    # Converts a local forward/lateral position into an occupancy-grid cell index.
+    # Example: 5 m ahead and 2 m left becomes one cell in the 2D map.
     def _grid_index(self, x_forward: float, y_lateral: float) -> int | None:
         grid_x = int((x_forward + self.map_rear_m) / self.map_resolution_m)
         grid_y = int((y_lateral + self.map_half_width_m) / self.map_resolution_m)
@@ -152,6 +169,9 @@ class HazardMapBuilderNode(Node):
             return None
         return grid_y * self.grid_width + grid_x
 
+
+    # Marks a circular hazard region in the map.
+    # This is used for compact/localized obstacles detected by the UGV or UAV scouts.
     def _stamp_disc(self, data: list[float], x_forward: float, y_lateral: float, radius_m: float, value: float):
         radius_cells = max(1, int(round(radius_m / self.map_resolution_m)))
         center_idx = self._grid_index(x_forward, y_lateral)
@@ -169,7 +189,8 @@ class HazardMapBuilderNode(Node):
                     continue
                 idx = gy * self.grid_width + gx
                 data[idx] = max(data[idx], value)
-
+    # Marks a wider band-shaped region in the map.
+    # This is used for broad terrain/highland cues rather than a single point obstacle.
     def _stamp_band(self, data: list[float], x_forward: float, y_min: float, y_max: float, depth_m: float, value: float):
         x_steps = max(1, int(round(depth_m / self.map_resolution_m)))
         x0 = x_forward
@@ -186,6 +207,10 @@ class HazardMapBuilderNode(Node):
                 current_y += y_step
             current_x += self.map_resolution_m
 
+
+    # Main fusion function for the hazard map.
+    # It combines previous live-map values, UGV obstacle cues, UAV scout reports,
+    # decay logic, and terrain guidance into updated hazard data and guidance text.
     def _compute_guidance(self) -> tuple[str, list[float]]:
         now = self.get_clock().now().nanoseconds / 1e9
         data = [max(0.0, value * self.decay_per_publish) for value in self.live_data]
@@ -261,30 +286,35 @@ class HazardMapBuilderNode(Node):
 
         return guidance, data
 
+    # Updates the memory map.
+    # Each cell keeps the strongest hazard value observed so far.
     def _update_memory_map(self, live_data: list[float]):
         for idx, value in enumerate(live_data):
             int_value = int(round(max(0.0, min(100.0, value))))
             if int_value > self.memory_data[idx]:
                 self.memory_data[idx] = int_value
 
+    # Converts the internal hazard-map list into a ROS OccupancyGrid message.
+    # This makes the map available for RViz visualization and other ROS nodes.
     def _build_grid_msg(self, data: list[int], frame_id: str) -> OccupancyGrid:
         grid = OccupancyGrid()
         grid.header.stamp = self.get_clock().now().to_msg()
         grid.header.frame_id = frame_id
-        grid.info.resolution = float(self.map_resolution_m)
+        grid.info.resolution = self.map_resolution_m
         grid.info.width = int(self.grid_width)
         grid.info.height = int(self.grid_height)
-        grid.info.origin.position.x = -float(self.map_rear_m)
-        grid.info.origin.position.y = -float(self.map_half_width_m)
+        grid.info.origin.position.x = -self.map_rear_m
+        grid.info.origin.position.y = -self.map_half_width_m
         grid.info.origin.position.z = 0.0
         grid.info.origin.orientation.w = 1.0
         grid.data = data
         return grid
-
+    
+    # Periodically publishes the live hazard map, memory hazard map, and guidance string.
+    # This is the main output loop of the hazard-map builder.
     def publish_updates(self):
         if self.husky_world_state is None:
             return
-
         guidance, live_data = self._compute_guidance()
         self.live_data = live_data
         self._update_memory_map(live_data)
