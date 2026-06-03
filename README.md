@@ -7,7 +7,6 @@ This repository is organized as the active thesis pipeline for:
 - model training and comparison
 - live learned-model evaluation
 - communication-aware experiments
-- dashboard-assisted run control
 
 ## Current Folder Structure
 
@@ -23,8 +22,6 @@ This repository is organized as the active thesis pipeline for:
   - episode-frame export, sample-table generation, notebooks, model weights, and comparison outputs
 - `model_eval`
   - live learned-model controller evaluation in Gazebo
-- `simulation_dashboard`
-  - local web dashboard for launching and monitoring runs
 
 Local-only folders such as `thesis_template_hh`, `thesis_refrences`, and `.codex`
 may exist in the working directory, but they are intentionally ignored and are
@@ -73,10 +70,6 @@ These control the absolute repository-root paths used by the active scripts.
 
 - `model_eval/trajectory_model_eval_sim.py`
 - `model_eval/controllers/husky_trajectory_model_driver.py`
-
-### Dashboard
-
-- `simulation_dashboard/start_dashboard.sh`
 
 ## Communication Profiles
 
