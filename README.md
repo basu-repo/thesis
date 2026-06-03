@@ -36,6 +36,18 @@ not part of the tracked Git repo.
 5. Evaluate the selected model live in `model_eval`.
 6. Optionally run communication-aware live evaluation with the local relay profiles in `communication`.
 
+## Command-Line Workflow For Defence
+
+The active workflow is command-line and notebook based:
+- launch the Gazebo world from `simulation`
+- run the cooperative rule-based stack from `cooperative_sim`
+- record and inspect rosbags under `dataset`
+- export bag data into episode frames
+- run the shared data-loading and split notebook
+- run the CV baseline and selected model-training notebooks
+- compare model results with the comparison notebooks
+- run learned-model evaluation from `model_eval`
+
 ## Important Path Files
 
 - `cooperative_sim/scripts/project_paths.py`
