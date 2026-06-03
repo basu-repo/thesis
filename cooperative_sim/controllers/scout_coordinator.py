@@ -8,8 +8,9 @@ from std_msgs.msg import Bool, String
 
 
 class ScoutCoordinatorNode(Node):
-    """Aggregate scout readiness and preview upcoming obstacles for the Husky."""
-
+    # Initializes the UAV scout coordinator.
+    # This node collects UAV scout reports, UAV readiness flags, and Husky local
+    # obstacle information, then publishes one compact cooperative summary.
     def __init__(
         self,
         node_name: str,
@@ -48,6 +49,8 @@ class ScoutCoordinatorNode(Node):
 
         self.get_logger().info("Scout coordinator started.")
 
+    # Creates a callback for one UAV scout report topic.
+    # Each report stores obstacle distance, lateral offset, and blocked/not-blocked status.
     def _make_report_cb(self, name: str):
         def cb(msg: Vector3):
             self.scout_reports[name] = {
@@ -58,18 +61,27 @@ class ScoutCoordinatorNode(Node):
 
         return cb
 
+    # Creates a callback for one UAV readiness topic.
+    # Readiness tells whether that UAV is in position and able to support the UGV.
     def _make_ready_cb(self, name: str):
         def cb(msg: Bool):
             self.scout_ready[name] = bool(msg.data)
 
         return cb
 
+    # Receives the Husky's own local obstacle state.
+    # This is used to decide whether a UAV obstacle preview is only a preview or locally verified.
     def husky_obstacle_action_cb(self, msg: String):
         self.husky_obstacle_action = msg.data.strip().lower() if msg.data else "clear"
 
+    # Receives the Husky's front clearance distance.
+    # A finite/close clearance means the UGV also has local evidence of an obstacle.
     def husky_obstacle_clearance_cb(self, msg: Vector3):
         self.husky_front_clearance = float(msg.x)
 
+    # Periodically publishes scout readiness and a cooperative summary.
+    # The summary is clear when no UAV reports a block, preview when only a UAV sees it,
+    # and verified when both UAV preview and Husky local sensing support the obstacle.
     def publish_updates(self):
         ready_count = sum(1 for ready in self.scout_ready.values() if ready)
         ready_state = ready_count >= self.min_ready_count if self.scout_ready else True
