@@ -59,12 +59,21 @@ These control the absolute repository-root paths used by the active scripts.
 ### Training and comparison
 
 - `model_training/notebooks/00_data_loading_and_split.ipynb`
+- `model_training/notebooks/02_rosbag_db3_inspection.ipynb`
+- `model_training/notebooks/10_cv_baseline.ipynb`
 - `model_training/notebooks/20_cnn_lstm.ipynb`
 - `model_training/notebooks/40_cnn_gnn_lstm.ipynb`
 - `model_training/notebooks/50_cnn_gnn_transformer.ipynb`
 - `model_training/notebooks/60_cnn_gnn_lstm_transformer.ipynb`
 - `model_training/notebooks/90_model_comparison.ipynb`
 - `model_training/notebooks/91_model_comparison_no_cv.ipynb`
+
+The model notebooks are intentionally scoped by model family:
+- `10_cv_baseline.ipynb` evaluates the non-neural constant-velocity reference.
+- `20_cnn_lstm.ipynb` trains the CNN--LSTM model.
+- `40_cnn_gnn_lstm.ipynb` trains the CNN--GNN--LSTM model.
+- `50_cnn_gnn_transformer.ipynb` trains the CNN--GNN--Transformer model.
+- `60_cnn_gnn_lstm_transformer.ipynb` trains the CNN--GNN--LSTM--Transformer model.
 
 ### Live learned-model evaluation
 
