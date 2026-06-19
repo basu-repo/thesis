@@ -1022,31 +1022,31 @@
     </joint>
     <!-- Gimbal Joints Plugins -->
     <plugin
-      filename="libignition-gazebo-joint-controller-system.so"
-      name="ignition::gazebo::systems::JointController">
+      filename="gz-sim-joint-controller-system"
+      name="gz::sim::systems::JointController">
       <joint_name>pan_gimbal_joint</joint_name>
       <use_force_commands>true</use_force_commands>
       <p_gain>0.4</p_gain>
       <i_gain>10</i_gain>
     </plugin>
     <plugin
-      filename="libignition-gazebo-joint-controller-system.so"
-      name="ignition::gazebo::systems::JointController">
+      filename="gz-sim-joint-controller-system"
+      name="gz::sim::systems::JointController">
       <joint_name>tilt_gimbal_joint</joint_name>
       <use_force_commands>true</use_force_commands>
       <p_gain>0.4</p_gain>
       <i_gain>10</i_gain>
     </plugin>
     <plugin
-      filename="libignition-gazebo-joint-state-publisher-system.so"
-      name="ignition::gazebo::systems::JointStatePublisher">
+      filename="gz-sim-joint-state-publisher-system"
+      name="gz::sim::systems::JointStatePublisher">
       <joint_name>pan_gimbal_joint</joint_name>
       <joint_name>tilt_gimbal_joint</joint_name>
     </plugin>
     <static>0</static>
     <plugin
-	filename="libignition-gazebo6-diff-drive-system.so"
-	name="ignition::gazebo::systems::DiffDrive">
+	filename="gz-sim-diff-drive-system"
+	name="gz::sim::systems::DiffDrive">
 	<left_joint>front_left_wheel_joint</left_joint>
 	<left_joint>rear_left_wheel_joint</left_joint>
 	<right_joint>front_right_wheel_joint</right_joint>
@@ -1087,8 +1087,8 @@
     
   
     <plugin
-      filename="ignition-gazebo-pose-publisher-system"
-      name="ignition::gazebo::systems::PosePublisher">
+      filename="gz-sim-pose-publisher-system"
+      name="gz::sim::systems::PosePublisher">
       <publish_link_pose>true</publish_link_pose>
       <use_pose_vector_msg>true</use_pose_vector_msg>
     </plugin>

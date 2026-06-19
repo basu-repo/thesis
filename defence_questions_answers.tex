@@ -1,0 +1,1152 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newcolumntype{Q}{>{\raggedright\arraybackslash}p{0.34\textwidth}}
+\newcolumntype{A}{>{\raggedright\arraybackslash}p{0.58\textwidth}}
+
+\title{Thesis Defence: Possible Questions and Short Answers}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{High-Level Thesis Questions}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+What is the main problem your thesis is solving? &
+The thesis addresses cooperative UGV navigation in outdoor terrain where local sensing is limited. It studies how UAV support, rule-based control, learned trajectory prediction, and communication effects can work together. \\
+\addlinespace
+Why is UAV assistance useful for UGV navigation? &
+UAVs can provide wider terrain and obstacle awareness from above. This helps the UGV receive cooperative context beyond its local ground-level sensors. \\
+\addlinespace
+What is the difference between trajectory prediction and navigation control? &
+Trajectory prediction estimates future positions. Navigation control converts that prediction into actual velocity commands while also handling safety, stopping, recovery, and goal reaching. \\
+\addlinespace
+Why did you use a rule-based controller before training learned models? &
+The rule-based controller provides safe and interpretable behavior. It also generates the supervised reference data used to train the learned trajectory models. \\
+\addlinespace
+What is the main novelty of your work? &
+The novelty is the integrated workflow: rule-based cooperative UAV--UGV simulation, dataset generation, hybrid model training, learned model redeployment, communication-aware evaluation, and runtime analysis. \\
+\addlinespace
+Why is this called a hybrid model? &
+It combines multiple neural components with different roles: CNN for clearance features, GNN for agent relations, LSTM for sequence memory, and Transformer for temporal attention. \\
+\addlinespace
+Why combine CNN, GNN, LSTM, and Transformer? &
+Each component captures a different part of the problem. Clearance history, multi-agent relationships, temporal motion, and attention-based time reasoning are all useful for trajectory prediction. \\
+\addlinespace
+What is meant by edge-enabled? &
+It means the work considers whether the trained system could later run on onboard robotic hardware. The thesis measures runtime and resource needs to guide future edge deployment. \\
+\addlinespace
+What part is ready for edge deployment? &
+The inference pipeline is the most realistic candidate for edge deployment. Training and full validation still need workstation-level resources and further hardware testing. \\
+\bottomrule
+\end{longtable}
+
+\section*{Rule-Based Controller}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+Why did you need a rule-based baseline? &
+It gives a clear comparison point for learned models. It also provides safe behavior and interpretable teacher actions for dataset generation. \\
+\addlinespace
+Is the rule-based controller only a baseline, or also a teacher? &
+It is both. It controls the robot during data collection and its behavior becomes the reference that the learned models try to predict. \\
+\addlinespace
+What are the main states in the rule-based UGV controller? &
+The main states include goal tracking, obstacle avoidance, reverse, pause, recovery, escape turn, escape drive, and recheck. These states allow structured behavior during normal and difficult situations. \\
+\addlinespace
+Why are safety and recovery states highest priority? &
+Because collision avoidance and recovery are more important than simply following the goal. If local safety is violated, the controller must override normal movement. \\
+\addlinespace
+How does the UGV decide between goal, avoid, reverse, and recover? &
+It checks obstacle clearance, goal distance, state history, and recovery conditions. Higher-priority safety rules override lower-priority goal tracking. \\
+\addlinespace
+What happens if UAV gives wrong information? &
+The UGV still relies on its own local sensing for object-level obstacle decisions. UAV information supports context, but local UGV safety remains the final authority. \\
+\addlinespace
+Why should the UGV trust itself more than UAV obstacle reports? &
+The UGV is physically executing the motion and has direct local obstacle sensing. UAV views can help with terrain context, but may be delayed, partial, or affected by communication. \\
+\addlinespace
+What is recorded from the rule-based controller? &
+The active controller state and executed command are recorded. These become teacher/reference signals during dataset export and model training. \\
+\bottomrule
+\end{longtable}
+
+\section*{Obstacle Detection and Depth Classification}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+Why use planar LiDAR and front point cloud? &
+Planar LiDAR gives local horizontal obstacle distance. The front point cloud adds spatial information in front of the robot for obstacle and terrain interpretation. \\
+\addlinespace
+What does front/left/right clearance mean? &
+These are estimated distances to nearby obstacles in three sectors around the UGV. They simplify raw sensor data into controller-friendly cues. \\
+\addlinespace
+Why does clearance sometimes show \texttt{999.0}? &
+It is used as a placeholder meaning no valid obstacle was detected within the useful range. In training, it represents clear/open space rather than an actual 999-meter distance. \\
+\addlinespace
+How does the depth classifier distinguish block, terrain, open, and unknown? &
+It checks valid pixel ratio, median depth, near-depth ratio, abrupt edges, and smooth gradients. These rule-based features are used to label image regions. \\
+\addlinespace
+Why are raw RGB/depth images not used in the current CNN model? &
+The current CNN uses compact LiDAR/clearance sequences, not images. Image-based perception is listed as future work because it requires larger datasets and different CNN architecture. \\
+\addlinespace
+If depth classification is not recorded, how does it affect training? &
+It may influence simulation decisions during the run, but its raw output is not a direct model input. The model learns from the recorded motion and selected recorded features. \\
+\addlinespace
+What is the limitation of rule-based depth classification? &
+It depends on manually chosen thresholds and may not generalize well to all lighting, terrain, or obstacle cases. A learned image-based method could be more flexible. \\
+\bottomrule
+\end{longtable}
+
+\section*{UAV Scout and Cooperative Context}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+What exactly does the UAV contribute? &
+The UAV contributes position, motion, and scouting context. In the learning model, UAVs are represented as cooperative agents related to the UGV. \\
+\addlinespace
+Does the UAV directly control the UGV? &
+No. The UAV provides context, but the UGV controller decides and publishes the final motion command. \\
+\addlinespace
+What is the scout coordinator doing? &
+It combines UAV readiness, scout reports, and UGV obstacle information into a compact summary. This reduces multiple topics into a more usable cooperative cue. \\
+\addlinespace
+What is clear, preview, and verified scout summary? &
+Clear means no UAV obstacle preview. Preview means UAV sees a possible issue before the UGV. Verified means the UAV preview agrees with local UGV sensing. \\
+\addlinespace
+Why use two UAVs instead of one? &
+Two UAVs give richer cooperative context and allow relational modeling between multiple agents. They also provide wider support around the UGV. \\
+\addlinespace
+How is UAV context represented in the learning model? &
+UAVs are represented as graph nodes with position, motion, and relation features. The GNN learns how UAV--UGV relationships affect UGV trajectory prediction. \\
+\addlinespace
+What happens if one UAV is not ready? &
+The system can still use available information, but cooperative context becomes weaker. The UGV's own local sensing remains responsible for safety. \\
+\bottomrule
+\end{longtable}
+
+\section*{Hazard Map}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+What is the purpose of the hazard map? &
+It provides a local grid representation of current and remembered hazards around the UGV. It helps visualize cooperative risk information. \\
+\addlinespace
+Is the hazard map used for training? &
+No, not as a direct training feature in the selected dataset. It supports simulation interpretation and visualization, while training uses selected recorded topics. \\
+\addlinespace
+What is live hazard map vs memory hazard map? &
+The live map shows current detected risk with decay. The memory map keeps the strongest previously observed hazard values. \\
+\addlinespace
+What does decay mean in the hazard map? &
+Decay gradually reduces old live hazard values over time. This prevents outdated detections from staying permanently active. \\
+\addlinespace
+Why is the hazard map local instead of global? &
+A local map is simpler and directly useful for near-term UGV decisions. It focuses on the area around the robot rather than mapping the whole environment. \\
+\addlinespace
+Why was hazard guidance not recorded as a direct training feature? &
+The selected training dataset focused on odometry, command, clearance, goal, and UAV context. Hazard map outputs were kept as intermediate simulation support rather than direct model inputs. \\
+\bottomrule
+\end{longtable}
+
+\section*{ROS Bag and Dataset}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+What is recorded in the rosbag? &
+It records clock, world pose, UGV/UAV odometry, commands, controller states, obstacle actions, clearance, LiDAR, point clouds, IMU, and episode metadata. \\
+\addlinespace
+What is not recorded, and why? &
+Raw images, depth classifier outputs, hazard maps, hazard guidance, and scout summaries are not direct recorded training features. This keeps the selected dataset focused and manageable. \\
+\addlinespace
+How do you convert rosbag messages into trainable samples? &
+Messages are read in timestamp order. Each Husky odometry event creates one aligned frame using the latest available supporting topic values. \\
+\addlinespace
+How are different topic frequencies aligned? &
+The exporter uses the latest value available from each topic at the current Husky odometry timestamp. This creates one synchronized frame even when topics publish at different rates. \\
+\addlinespace
+Why create a frame when Husky odometry arrives? &
+Husky odometry gives the target robot's current state and position. It is the natural anchor for UGV trajectory prediction. \\
+\addlinespace
+What is the difference between a frame and a sample? &
+A frame is one aligned time step. A sample contains multiple past frames as input and future UGV positions as the target. \\
+\addlinespace
+Why use 10 past frames and 5 future points? &
+Ten frames provide recent motion history, while five future points define a short prediction horizon. This keeps the task useful but not too long-range. \\
+\addlinespace
+Why split by episode instead of random frames? &
+Episode-level splitting prevents similar neighboring frames from the same run appearing in both train and test. This gives a fairer unseen-run evaluation. \\
+\addlinespace
+What is data leakage? &
+Data leakage happens when information from the test set indirectly appears in training. Random frame splitting can cause this because adjacent frames are very similar. \\
+\addlinespace
+Why use random seed 42? &
+The seed makes the split reproducible. Anyone rerunning the pipeline can obtain the same train, validation, and test separation. \\
+\bottomrule
+\end{longtable}
+
+\section*{Model Architecture}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+What does the CNN branch learn? &
+It learns patterns from front, left, and right clearance over recent time. This gives a compact representation of local obstacle history. \\
+\addlinespace
+Why is your CNN called 1D CNN? &
+The input is a time sequence of clearance values, not a 2D image. Conv1D learns temporal patterns along the sequence. \\
+\addlinespace
+What does \texttt{Conv1D 3 to 16} mean? &
+It means the layer takes 3 input channels, front/left/right, and learns 16 output filters. These filters detect useful clearance-history patterns. \\
+\addlinespace
+What does kernel size and padding mean? &
+Kernel size is how many neighboring time steps the filter looks at. Padding keeps the output sequence length from shrinking. \\
+\addlinespace
+What does the GNN branch learn? &
+It learns relationships between UGV, UAV1, and UAV2. This helps the model use cooperative multi-agent context. \\
+\addlinespace
+Why are UGV, UAV1, and UAV2 graph nodes? &
+Each robot is an agent with its own state. Representing them as nodes allows the model to learn how their relative positions and motions matter. \\
+\addlinespace
+What are edge features? &
+Edge features describe pairwise relationships between agents, such as relative distance, direction, and spatial relationship. \\
+\addlinespace
+What is message passing? &
+Message passing lets graph nodes exchange learned information. Each agent updates its representation based on information from other agents. \\
+\addlinespace
+What does 96-D mean? &
+It means a feature vector with 96 numerical values. These values are learned internal representations, not direct physical units. \\
+\addlinespace
+Why choose 96 for graph hidden size? &
+It is a design choice that gives enough capacity without making the model too large. It balances representation power and computational cost. \\
+\addlinespace
+What does the LSTM learn? &
+It learns sequential motion history from past frames. It summarizes recent behavior into a temporal memory vector. \\
+\addlinespace
+Why use LSTM for temporal history? &
+LSTM is designed for ordered sequence data. It can remember useful patterns from previous time steps. \\
+\addlinespace
+What does the Transformer add beyond LSTM? &
+The Transformer can compare all past frames using attention. It can focus on the most relevant time steps rather than only processing sequentially. \\
+\addlinespace
+Why does Transformer need positional encoding? &
+Attention alone does not know the order of frames. Positional encoding adds time-step order information. \\
+\addlinespace
+Why did CNN--GNN--Transformer perform best, not the largest model? &
+The best model combined relational context and temporal attention effectively. The larger model may have added complexity without improving generalization. \\
+\bottomrule
+\end{longtable}
+
+\section*{Evaluation}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+What are ADE, FDE, and RMSE? &
+ADE is average displacement error across all predicted points. FDE is error at the final future point. RMSE measures overall prediction error with stronger penalty for larger errors. \\
+\addlinespace
+Why use constant velocity baseline? &
+It is a simple reference model that assumes the robot keeps moving at the same velocity. Learned models should outperform it if they learn useful context. \\
+\addlinespace
+Why did all learned models outperform constant velocity? &
+The learned models used goal, obstacle, motion, and UAV context. Constant velocity only extrapolates the last motion and cannot react to context. \\
+\addlinespace
+Why is CNN--LSTM already strong? &
+Much of the UGV motion depends on ego state, goal relation, and clearance history. CNN--LSTM captures these without requiring graph context. \\
+\addlinespace
+What does ``UAV context was useful but modest'' mean? &
+The best model used GNN-based UAV context, but CNN--LSTM was still competitive. This suggests UAV context helps, but local UGV and goal features are also very strong. \\
+\addlinespace
+Why does the best offline model not fully replace the rule-based controller? &
+Offline prediction accuracy does not guarantee complete control reliability. Real command execution still needs safety checks, recovery logic, and stable control conversion. \\
+\addlinespace
+What is offline evaluation vs simulation redeployment? &
+Offline evaluation compares predicted trajectories to saved ground truth. Redeployment puts the trained model back into simulation to influence robot movement. \\
+\addlinespace
+Why did learned model have more logged samples than rule-based run? &
+The learned run can produce commands and logs at a different timing pattern. More samples do not necessarily mean worse behavior; they reflect logging/control frequency and run dynamics. \\
+\addlinespace
+Why was learned path slightly longer but time shorter? &
+The learned controller may have moved more continuously or followed a different path shape. Path length and time are related but not identical. \\
+\bottomrule
+\end{longtable}
+
+\section*{Communication and OMNeT++}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+Why include communication simulation? &
+UAV support depends on whether information reaches the UGV reliably. Communication simulation makes the evaluation more realistic than assuming perfect links. \\
+\addlinespace
+What communication effects were modeled? &
+The thesis considered delay, jitter, packet loss, and communication quality changes. These affect how useful UAV-shared information is. \\
+\addlinespace
+What are delay, jitter, and packet loss? &
+Delay is late arrival of data. Jitter is variation in delay. Packet loss means some messages do not arrive. \\
+\addlinespace
+Why use OMNeT++ instead of only ROS 2? &
+ROS 2 handles robotics communication but does not deeply model network degradation. OMNeT++ is designed for communication-system simulation. \\
+\addlinespace
+What is WiFi-style vs Bluetooth-style relay? &
+They are communication profiles with different delay, jitter, and loss behavior. WiFi-style was closer to nominal, while Bluetooth-style represented harsher degradation. \\
+\addlinespace
+How did communication degradation affect the mission? &
+It reduced communication quality and increased mission time in the harsher profile. However, the tested system still reached the goal. \\
+\addlinespace
+Was communication used during training or only evaluation? &
+Communication degradation was mainly evaluated during simulation. The training dataset used recorded cooperative context from the simulation runs. \\
+\bottomrule
+\end{longtable}
+
+\section*{Runtime and Edge Deployment}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+Why measure CPU, memory, and GPU usage? &
+Resource measurements show whether the pipeline is practical beyond pure accuracy. They help judge feasibility for future onboard deployment. \\
+\addlinespace
+Why is training more expensive than inference? &
+Training updates model weights through many epochs and backpropagation. Inference only runs the trained model forward to make predictions. \\
+\addlinespace
+Why compute on Husky instead of M100 UAV? &
+Husky has better power and payload capacity. The M100 UAV should remain lighter as a scout platform to preserve flight endurance. \\
+\addlinespace
+Why is Jetson Orin NX a minimum candidate? &
+It offers compact edge-AI capability suitable for optimized inference. It is a realistic lower-end candidate for future onboard testing. \\
+\addlinespace
+Why is Jetson AGX Orin safer? &
+It provides more compute headroom for ROS 2, perception, inference, communication, and logging together. This reduces the risk of resource bottlenecks. \\
+\addlinespace
+Can your current model run on embedded hardware today? &
+Not validated yet. The laptop results suggest feasibility direction, but embedded deployment needs optimization and direct hardware testing. \\
+\addlinespace
+What optimization would be needed? &
+Possible steps include reducing model size, limiting sensor topics, quantization, efficient inference runtime, and testing with real ROS 2 load on target hardware. \\
+\bottomrule
+\end{longtable}
+
+\section*{Limitations and Future Work}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+What are the biggest limitations? &
+The study is simulation-only, uses a limited number of runs, and does not use raw image-based CNN perception. Edge deployment is also not yet validated on real hardware. \\
+\addlinespace
+Why is simulation-only a limitation? &
+Simulation cannot fully reproduce real sensor noise, terrain variation, lighting, localization errors, and hardware constraints. Real-world tests are needed after thesis work. \\
+\addlinespace
+What would change in real-world deployment? &
+Sensor calibration, localization, communication reliability, compute limits, battery/payload constraints, and safety validation become much more important. \\
+\addlinespace
+Why is image classification useful for future work? &
+It can identify obstacle type, terrain texture, vegetation, and traversability. This gives richer perception than clearance values alone. \\
+\addlinespace
+Why consider reinforcement learning? &
+RL can learn adaptive control policies and generate more diverse behavior. It may help create richer teacher policies and training data. \\
+\addlinespace
+What are PPO and SAC? &
+PPO and SAC are reinforcement learning algorithms commonly used for continuous-control tasks. They could learn linear and angular velocity commands for UGV navigation. \\
+\addlinespace
+What is the next real-world step? &
+The next step is optimized inference on onboard hardware, followed by controlled outdoor Husky--UAV experiments. \\
+\bottomrule
+\end{longtable}
+
+\section*{Tough Examiner Questions}
+\begin{longtable}{QA}
+\toprule
+\textbf{Question} & \textbf{Short Answer} \\
+\midrule
+\endhead
+If the rule-based controller is more reliable, why use learning? &
+Learning provides smoother prediction and can capture patterns that are hard to hand-code. The goal is not immediate replacement, but to study how learned prediction can support cooperative navigation. \\
+\addlinespace
+Is the learned model just copying the rule-based teacher? &
+It is trained from rule-based behavior, so it learns from that reference. The purpose is to model and generalize short-horizon maneuver behavior from structured examples. \\
+\addlinespace
+How do you know it did not just memorize routes? &
+Episode-level splitting helps reduce memorization by testing on unseen runs. However, broader terrain and goal variation would be needed for stronger generalization claims. \\
+\addlinespace
+With only 8 runs, is the dataset large enough? &
+It is enough for a controlled thesis-scale comparison, but not enough for broad real-world generalization. That is why future work includes more scenarios and real-world testing. \\
+\addlinespace
+Why trust results if only simulation was used? &
+The results are valid for the simulated experimental setup and show feasibility. They should not be claimed as final real-world proof. \\
+\addlinespace
+Why does the title say real-time if much evaluation is offline? &
+The training and comparison are offline, but the selected model is redeployed in the simulation loop for runtime inference. The term refers to the intended online use of model predictions during simulation. \\
+\addlinespace
+Why does the CNN not use images? &
+In this implementation, the CNN processes 1D clearance sequences. Image-based CNN perception is acknowledged as future work. \\
+\addlinespace
+Why does learned controller need safety logic if it predicts good trajectories? &
+Prediction is not the same as safe control. Safety logic is still needed because the model can be uncertain or face situations outside its training distribution. \\
+\addlinespace
+Can the model generalize to different terrain or goals? &
+It may generalize within similar simulated conditions, but broader claims require more varied training data and testing. More terrains, goals, and real-world runs are future work. \\
+\addlinespace
+What would fail first in a real outdoor experiment? &
+Likely issues include localization drift, imperfect sensing, communication loss, compute load, or mismatch between simulated and real terrain. These are exactly why staged real-world validation is needed. \\
+\bottomrule
+\end{longtable}
+
+\newpage
+\section*{Slide Explanation: Constant Velocity Baseline}
+
+\subsection*{What This Slide Shows}
+This slide explains the simplest non-learning baseline used for trajectory
+prediction. The constant velocity baseline does not use CNN, GNN, LSTM,
+Transformer, obstacle context, or UAV relational information. It only uses the
+last observed UGV position and velocity, then extends that motion into the
+future.
+
+\subsection*{How to Explain It in Defence}
+The first block shows the last observed UGV state, usually written as position
+and velocity:
+\[
+    x_t,\; y_t,\; v_x,\; v_y
+\]
+Here, \(x_t\) and \(y_t\) are the current UGV position at time \(t\), while
+\(v_x\) and \(v_y\) are the current velocity components in the world frame.
+
+The second block is the main assumption of the baseline:
+\[
+    \text{velocity remains unchanged.}
+\]
+This means the method assumes that the UGV continues moving in the same
+direction and at the same speed. It does not know about obstacles, terrain,
+goal direction changes, UAV support, or controller recovery behavior.
+
+The third block shows the future time offsets:
+\[
+    \Delta t_1,\; \Delta t_2,\; \Delta t_3,\; \Delta t_4,\; \Delta t_5
+\]
+These represent the five future prediction steps. For each future step, the
+baseline estimates where the UGV would be if it simply continued with the same
+velocity.
+
+\subsection*{Mathematical Form}
+The future position is computed using simple linear extrapolation:
+\[
+    \hat{x}_{t+k} = x_t + v_x \Delta t_k
+\]
+\[
+    \hat{y}_{t+k} = y_t + v_y \Delta t_k
+\]
+where \(k = 1,2,3,4,5\). The output is therefore a five-point predicted future
+trajectory:
+\[
+    \hat{Y}_1,\; \hat{Y}_2,\; \hat{Y}_3,\; \hat{Y}_4,\; \hat{Y}_5
+\]
+
+\subsection*{How to Explain the Bottom Diagram}
+The filled black circles represent the observed UGV positions from the recent
+past. The open circles represent the predicted future positions produced by the
+constant velocity assumption. The dashed line shows that the prediction is only
+an extrapolation of the previous motion trend.
+
+\subsection*{Why This Baseline Is Important}
+This baseline is useful because it gives a simple reference point. If a learned
+model cannot perform better than constant velocity, then the model has not
+learned enough useful information from goal context, obstacle context, motion
+history, or UAV relationships. In the thesis results, all learned models
+performed better than this baseline, which shows that the hybrid models learned
+more than simple straight-line motion continuation.
+
+\subsection*{Short Defence Answer}
+``The constant velocity baseline predicts the UGV's future position by assuming
+that its current velocity stays unchanged. It is a simple non-learning reference
+model. We used it to check whether the learned models actually improve beyond
+basic motion extrapolation.''
+
+\newpage
+\section*{Slide Explanation: 1D CNN Clearance Feature Extractor}
+
+\subsection*{What This Slide Shows}
+This slide explains the CNN branch used in the trajectory-prediction models.
+In this work, the CNN does not process RGB images. Instead, it processes a
+compact clearance sequence from the UGV obstacle detector. The input contains
+front, left, and right clearance values over the last 10 frames:
+\[
+    \texttt{scan\_seq} \in \mathbb{R}^{10 \times 3}
+\]
+The 10 rows represent time steps, and the 3 columns represent front, left, and
+right clearance.
+
+\subsection*{Why It Is Called a 1D CNN}
+It is called a 1D CNN because the convolution is applied along one main
+dimension: the time/history direction. The model is not looking at a 2D image.
+It is looking at how the three clearance values change across the recent 10
+frames.
+
+\subsection*{Input and Transpose}
+The original input shape is:
+\[
+    10 \times 3
+\]
+where 10 is the number of past frames and 3 is the number of clearance channels.
+Before applying \texttt{Conv1D}, the data is transposed:
+\[
+    10 \times 3 \rightarrow 3 \times 10
+\]
+This is done because PyTorch \texttt{Conv1D} expects the channel dimension first.
+Here, the three channels are front, left, and right clearance.
+
+\subsection*{First Convolution Layer}
+The first convolution layer is shown as:
+\[
+    \texttt{Conv1D}: 3 \rightarrow 16,\quad k=3,\quad p=1
+\]
+This means the layer takes 3 input channels and learns 16 output filters.
+The kernel size \(k=3\) means the filter looks at three neighboring time
+positions at once. The padding \(p=1\) keeps the sequence length the same after
+convolution.
+
+\subsection*{ReLU Activation}
+After the convolution, ReLU is applied:
+\[
+    \text{ReLU}(x) = \max(0,x)
+\]
+ReLU adds non-linearity, allowing the CNN to learn richer patterns than a simple
+linear transformation. In simple words, it helps the model learn more useful
+clearance-history features.
+
+\subsection*{Second Convolution Layer}
+The second convolution layer is:
+\[
+    \texttt{Conv1D}: 16 \rightarrow 128,\quad k=3,\quad p=1
+\]
+This expands the learned representation from 16 filters to 128 filters. At this
+stage, the CNN has a richer description of how front, left, and right clearance
+changed over the recent frames.
+
+\subsection*{Adaptive Average Pooling}
+The adaptive average pooling block reduces the time dimension to length 1:
+\[
+    \texttt{AdaptiveAvgPool1D}(1)
+\]
+This means each of the 128 learned channels is summarized into one value. The
+purpose is to convert the full 10-frame clearance history into one compact
+feature vector.
+
+\subsection*{Flatten or Squeeze}
+After pooling, the output still has a length-1 dimension. Flatten or squeeze
+removes that extra dimension and produces the final CNN feature vector:
+\[
+    \mathbf{c} \in \mathbb{R}^{128}
+\]
+This 128-dimensional vector is then passed to the later fusion or trajectory
+prediction part of the model.
+
+\subsection*{What the CNN Learns}
+The CNN learns local clearance-history patterns, such as whether an obstacle is
+getting closer, whether the front is clear, or whether left/right clearance is
+changing. It converts simple front/left/right distance values into a learned
+feature representation that is more useful for trajectory prediction.
+
+\subsection*{Why This Branch Is Useful}
+This branch gives the model compact local obstacle awareness. The trajectory
+model does not need to process raw LiDAR scans directly in this branch; instead,
+it receives a learned summary of recent clearance behavior. This helps keep the
+model lighter while still preserving important obstacle context.
+
+\subsection*{Short Defence Answer}
+``In this thesis, the CNN is a 1D clearance feature extractor, not an image CNN.
+It takes 10 past frames of front, left, and right clearance, learns temporal
+patterns using Conv1D layers, and outputs a compact 128-dimensional obstacle
+history feature for trajectory prediction.''
+
+\newpage
+\section*{Slide Explanation: GNN Multi-Agent Relationship Feature Extractor}
+
+\subsection*{What This Slide Shows}
+This slide explains the GNN branch used to represent the relationship between
+the UGV and the two UAVs. The purpose of the GNN is to convert multi-agent
+context into a learned graph feature sequence. In this work, each time step has
+three graph nodes:
+\[
+    \text{UGV},\quad \text{UAV1},\quad \text{UAV2}
+\]
+The input sequence is:
+\[
+    \texttt{node\_seq} \in \mathbb{R}^{10 \times 3 \times 12}
+\]
+This means 10 past frames, 3 agents, and 12 node features for each agent.
+
+\subsection*{Graph per Frame}
+For each past frame, the UGV, UAV1, and UAV2 are treated as graph nodes. The
+edges describe the pairwise relationships between agents:
+\[
+    \texttt{edge\_seq} \in \mathbb{R}^{10 \times 3 \times 3 \times 8}
+\]
+The \(3 \times 3\) part represents relationships from every agent to every other
+agent, including self-relations. The 8 edge features describe relative spatial
+and geometric information between two agents.
+
+\subsection*{Node Projection MLP}
+The node projection block is shown as:
+\[
+    12 \rightarrow 96 \rightarrow 96
+\]
+This means each raw 12-feature node vector is converted into a learned
+96-dimensional node embedding. An MLP, or multilayer perceptron, is a small
+feed-forward neural network made of linear layers and activation functions.
+
+\subsection*{Edge Message MLP}
+The edge message block is shown as:
+\[
+    96 + 96 + 8 \rightarrow 96 \rightarrow 96
+\]
+The input combines the source node embedding, the target node embedding, and
+the edge features between them. In simple words, this block computes what
+message one agent should send to another based on their states and relationship.
+
+\subsection*{Message Aggregation}
+After edge messages are computed, the incoming messages for each node are
+summed or combined:
+\[
+    m_i = \sum_{j} m_{j \rightarrow i}
+\]
+This gives each node a summary of information received from the other agents.
+For example, the UGV node can receive information from UAV1 and UAV2 through
+these messages.
+
+\subsection*{Node Update MLP}
+The node update block is:
+\[
+    96 + 96 \rightarrow 96 \rightarrow 96
+\]
+It combines the old node embedding with the aggregated incoming message. This
+updates each agent's representation using both its own state and the context
+received from other agents.
+
+\subsection*{Message Passing Repeated Two Times}
+The diagram shows that message passing is repeated two times. This allows the
+agents to exchange and refine information more than once. After two steps, the
+node embeddings contain richer cooperative context than the original raw node
+features.
+
+\subsection*{Mean Pooling Over Nodes}
+After message passing, the model has updated embeddings for UGV, UAV1, and
+UAV2. Mean pooling combines these three node embeddings into one graph feature
+for that frame:
+\[
+    g_t = \frac{1}{3}(h_{\text{UGV}} + h_{\text{UAV1}} + h_{\text{UAV2}})
+\]
+This produces one 96-dimensional graph feature for each time step.
+
+\subsection*{Final GNN Output}
+Because the GNN is applied over 10 past frames, the final output is:
+\[
+    \text{graph feature sequence} \in \mathbb{R}^{10 \times 96}
+\]
+This means the model now has one 96-dimensional cooperative relationship
+feature for each of the 10 past frames. This output can then be passed to the
+LSTM or Transformer branch for temporal modeling.
+
+\subsection*{What the GNN Learns}
+The GNN learns how the UGV and UAVs are spatially and dynamically related. It
+can represent whether UAVs are near or far, how they are positioned relative to
+the UGV, and how this cooperative context may influence the UGV's future
+trajectory.
+
+\subsection*{Why This Branch Is Useful}
+The GNN is useful because cooperative navigation is not only about the UGV's
+own motion. UAVs provide additional context, and the graph structure gives the
+model a clean way to represent multi-agent relationships. This is why the
+GNN-based models can use UAV context more explicitly than the CNN--LSTM model.
+
+\subsection*{Short Defence Answer}
+``The GNN branch represents UGV, UAV1, and UAV2 as graph nodes. It uses node
+features and pairwise edge features to perform message passing, so each agent's
+representation is updated using information from the others. The final output is
+a 10 by 96 graph feature sequence that describes cooperative UAV--UGV context
+over time.''
+
+\newpage
+\section*{Slide Explanation: LSTM Temporal Feature Extractor}
+
+\subsection*{What This Slide Shows}
+This slide explains the LSTM branch used for temporal motion understanding. The
+LSTM receives a sequence of recent UGV goal/state features and converts it into
+one compact temporal feature vector. The input is:
+\[
+    \texttt{goal\_seq} \in \mathbb{R}^{10 \times 13}
+\]
+This means 10 past frames, where each frame contains 13 goal/state features.
+
+\subsection*{What the 10 Past Frames Mean}
+The sequence contains recent history from time \(t-9\) to time \(t\):
+\[
+    \mathbf{x}_{t-9},\; \mathbf{x}_{t-8},\; \ldots,\; \mathbf{x}_{t-1},\; \mathbf{x}_{t}
+\]
+Each \(\mathbf{x}\) is one 13-dimensional feature vector. These features
+describe the UGV's motion, goal relation, previous command, and local clearance
+context.
+
+\subsection*{Input Size = 13}
+The LSTM input size is 13 because each time step has 13 features:
+\[
+    \mathbf{x}_t \in \mathbb{R}^{13}
+\]
+In simple words, every frame gives the LSTM a compact description of the UGV's
+current state and goal-related situation.
+
+\subsection*{How the LSTM Reads the Sequence}
+The LSTM reads the sequence in time order. At each time step, it updates its
+internal memory:
+\[
+    h_t,\; c_t = \text{LSTM}(\mathbf{x}_t,\; h_{t-1},\; c_{t-1})
+\]
+Here, \(h_t\) is the hidden state and \(c_t\) is the cell state. The hidden state
+acts like the output memory, while the cell state helps carry longer-term
+information through the sequence.
+
+\subsection*{Hidden Size = 128}
+The hidden size is 128, meaning the LSTM stores its learned temporal summary as
+128 values:
+\[
+    h_t \in \mathbb{R}^{128}
+\]
+These 128 values are not direct physical quantities. They are learned features
+that summarize the recent motion history.
+
+\subsection*{One LSTM Layer}
+The model uses one LSTM layer:
+\[
+    \text{layers} = 1
+\]
+This keeps the model relatively compact while still allowing it to learn useful
+temporal behavior. A deeper LSTM could be used, but it would increase model
+complexity and training cost.
+
+\subsection*{Final Hidden State}
+After the LSTM processes all 10 frames, the final hidden state is used as the
+temporal feature:
+\[
+    \mathbf{h}_{\text{final}} \in \mathbb{R}^{128}
+\]
+This final hidden state summarizes the full 10-frame history. It is then passed
+to the prediction head or fused with other branches, such as CNN or GNN
+features.
+
+\subsection*{What the LSTM Learns}
+The LSTM learns how the UGV has been moving recently. It can capture whether the
+robot is moving smoothly, slowing down, turning, recovering, or approaching the
+goal. This temporal memory is useful because the future trajectory depends not
+only on the current frame, but also on the recent movement pattern.
+
+\subsection*{Why This Branch Is Useful}
+Trajectory prediction is a time-dependent problem. A single frame may not be
+enough to understand motion direction or maneuver intent. The LSTM provides
+memory over the past 10 frames, helping the model predict the next short-horizon
+UGV positions more reliably.
+
+\subsection*{Short Defence Answer}
+``The LSTM branch reads 10 past frames of 13 goal/state features in time order.
+It learns recent motion history and summarizes that history into a 128-dimensional
+final hidden state. This temporal feature is then used for prediction or fused
+with other model branches.''
+
+\newpage
+\section*{Slide Explanation: Transformer Temporal Attention Feature Extractor}
+
+\subsection*{What This Slide Shows}
+This slide explains the Transformer branch used for temporal attention. The
+Transformer receives a sequence of temporal input features and learns which
+past frames are most important for predicting the UGV's future trajectory. In
+the GNN--Transformer model, the temporal input is:
+\[
+    10 \times (13 + 96) = 10 \times 109
+\]
+This means 10 past frames, where each frame contains 13 goal/state features and
+96 graph features from the GNN.
+
+\subsection*{Temporal Input}
+The input sequence can be written as:
+\[
+    \mathbf{x}_{t-9},\; \mathbf{x}_{t-8},\; \ldots,\; \mathbf{x}_{t}
+\]
+where each frame is a 109-dimensional vector:
+\[
+    \mathbf{x}_t \in \mathbb{R}^{109}
+\]
+The 109 features come from combining local goal/state information with the
+multi-agent graph context.
+
+\subsection*{Linear Projection}
+The first block is a linear projection:
+\[
+    109 \rightarrow 128
+\]
+This converts the input feature size into the Transformer hidden size. In
+simple terms, it maps each 109-dimensional frame into a 128-dimensional feature
+space that the Transformer encoder can process.
+
+\subsection*{Learnable Positional Encoding}
+Transformers do not automatically understand sequence order. Therefore,
+positional encoding is added:
+\[
+    \mathbf{z}_t = \mathbf{x}_t W + \mathbf{p}_t
+\]
+Here, \(\mathbf{p}_t\) is a learned positional vector for time step \(t\). This
+tells the model whether a frame came earlier or later in the 10-frame sequence.
+
+\subsection*{Transformer Encoder}
+The Transformer encoder learns temporal relationships using self-attention.
+Self-attention allows each time step to compare itself with every other time
+step in the sequence. This helps the model focus on the most relevant past
+moments for future trajectory prediction.
+
+\subsection*{Two Encoder Layers}
+The slide shows:
+\[
+    \text{encoder layers} = 2
+\]
+This means the attention block is stacked twice. The first layer learns one
+level of temporal relationship, and the second layer refines that representation.
+
+\subsection*{Four Attention Heads}
+The model uses:
+\[
+    \text{attention heads} = 4
+\]
+Multiple attention heads allow the model to look at the sequence from different
+learned perspectives. For example, one head may focus on recent motion, while
+another may focus on an earlier change in direction or context.
+
+\subsection*{Feed-Forward Size and GELU}
+Inside each Transformer block, there is a feed-forward network with size:
+\[
+    \text{FF} = 256
+\]
+The activation function is GELU. This adds non-linearity and helps the model
+learn more expressive temporal patterns after the attention operation.
+
+\subsection*{Dropout}
+The model uses dropout:
+\[
+    \text{dropout} = 0.10
+\]
+Dropout is a regularization method. During training, it randomly removes a
+small part of the internal representation so the model does not depend too
+strongly on one feature and is less likely to overfit.
+
+\subsection*{Mean Pooling Over Time}
+After the Transformer processes the 10 time steps, mean pooling combines them
+into one summary vector:
+\[
+    10 \times 128 \rightarrow 128
+\]
+This averages the transformed time-step features and produces one
+128-dimensional temporal feature for prediction or fusion.
+
+\subsection*{Final Transformer Output}
+The final output is:
+\[
+    \mathbf{h}_{\text{transformer}} \in \mathbb{R}^{128}
+\]
+This 128-dimensional vector summarizes the important temporal information from
+the past 10 frames. It is then used by the trajectory head or fused with other
+branches.
+
+\subsection*{What the Transformer Learns}
+The Transformer learns which previous time steps matter most. Unlike LSTM,
+which reads frames step by step, the Transformer can compare all 10 frames at
+once using attention. This helps it identify important moments in the recent
+history, such as a change in movement, obstacle context, or cooperative UAV
+relationship.
+
+\subsection*{Why This Branch Is Useful}
+The Transformer is useful because short-horizon trajectory prediction depends
+on temporal context. Some past frames may be more important than others. The
+attention mechanism allows the model to assign more importance to the relevant
+frames instead of treating all previous frames equally.
+
+\subsection*{Short Defence Answer}
+``The Transformer branch receives 10 past frames of combined goal/state and GNN
+features. It projects each frame to 128 dimensions, adds positional encoding,
+and uses self-attention to learn which past frames are most important. The final
+128-dimensional temporal feature is then used for trajectory prediction or
+fusion.''
+
+\newpage
+\section*{Slide Explanation: ADE, FDE, and RMSE Formulas}
+
+\subsection*{Notation Used in the Formulas}
+For trajectory prediction, the model predicts a short future trajectory and this
+prediction is compared with the ground-truth future trajectory.
+
+\[
+    F
+\]
+is the future prediction horizon. In this thesis, the model predicts five future
+points, so:
+\[
+    F = 5
+\]
+
+\[
+    k
+\]
+is the index of the future prediction step:
+\[
+    k = 1,2,\ldots,F
+\]
+
+\[
+    \hat{\mathbf{p}}_k
+\]
+is the predicted future position at step \(k\). The hat symbol \(\hat{\;}\)
+means predicted:
+\[
+    \hat{\mathbf{p}}_k =
+    \begin{bmatrix}
+        \hat{x}_k \\
+        \hat{y}_k
+    \end{bmatrix}
+\]
+
+\[
+    \mathbf{p}_k
+\]
+is the ground-truth future position at step \(k\):
+\[
+    \mathbf{p}_k =
+    \begin{bmatrix}
+        x_k \\
+        y_k
+    \end{bmatrix}
+\]
+
+\[
+    \|\hat{\mathbf{p}}_k - \mathbf{p}_k\|_2
+\]
+is the Euclidean distance between the predicted point and the true point:
+\[
+    \|\hat{\mathbf{p}}_k - \mathbf{p}_k\|_2
+    =
+    \sqrt{(\hat{x}_k - x_k)^2 + (\hat{y}_k - y_k)^2}
+\]
+
+\subsection*{Average Displacement Error}
+Average Displacement Error, or ADE, measures the average distance error across
+all predicted future points:
+\[
+    ADE =
+    \frac{1}{F}
+    \sum_{k=1}^{F}
+    \|\hat{\mathbf{p}}_k - \mathbf{p}_k\|_2
+\]
+In simple words, ADE calculates the distance error at every future prediction
+point and then averages those errors. A lower ADE means the predicted trajectory
+is closer to the true trajectory overall.
+
+\subsection*{Final Displacement Error}
+Final Displacement Error, or FDE, measures only the error at the final predicted
+future point:
+\[
+    FDE =
+    \|\hat{\mathbf{p}}_F - \mathbf{p}_F\|_2
+\]
+Here, \(\hat{\mathbf{p}}_F\) is the final predicted point and
+\(\mathbf{p}_F\) is the final ground-truth point. FDE is useful because it shows
+how accurate the model is at the end of the prediction horizon.
+
+\subsection*{Root Mean Square Error}
+Root Mean Square Error, or RMSE, measures the coordinate-level error across all
+future \(x\) and \(y\) values:
+\[
+    RMSE =
+    \sqrt{
+    \frac{1}{2F}
+    \sum_{k=1}^{F}
+    \sum_{i\in\{x,y\}}
+    (\hat{y}_{k,i} - y_{k,i})^2
+    }
+\]
+In this formula, \(i\in\{x,y\}\) means that the error is calculated for both
+coordinate dimensions. The term \(\hat{y}_{k,i}\) is the predicted coordinate
+value at future step \(k\), and \(y_{k,i}\) is the true coordinate value at the
+same future step.
+
+The denominator \(2F\) is used because each future point has two coordinate
+values, \(x\) and \(y\). Since \(F=5\), the total number of coordinate values is:
+\[
+    2F = 2 \times 5 = 10
+\]
+
+RMSE squares the coordinate errors before averaging them, so larger prediction
+mistakes are penalized more strongly.
+
+\subsection*{Short Defence Answer}
+``ADE measures the average distance error over all predicted future points. FDE
+measures only the error at the final future point. RMSE measures the overall
+coordinate-level error and penalizes larger mistakes more strongly because the
+errors are squared.''
+
+\newpage
+\section*{Slide Explanation: Loss Function and Optimization}
+
+\subsection*{What This Section Means}
+This section explains how the trajectory-prediction models are trained. During
+training, the model predicts a short future local trajectory, and this predicted
+trajectory is compared with the target or ground-truth local trajectory. The
+difference between them is measured using a trajectory loss.
+
+\subsection*{Prediction Horizon}
+The model predicts:
+\[
+    F = 5
+\]
+future points. Each future point has two local coordinates:
+\[
+    x,\; y
+\]
+Therefore, one predicted trajectory contains:
+\[
+    5 \times 2 = 10
+\]
+coordinate values.
+
+\subsection*{Trajectory Loss Formula}
+The trajectory loss is written as:
+\[
+    \mathcal{L}_{traj}
+    =
+    \frac{1}{2F}
+    \sum_{k=1}^{F}
+    \sum_{i\in\{x,y\}}
+    \mathrm{SmoothL1}(\hat{y}_{k,i} - y_{k,i})
+\]
+This loss compares the predicted and true coordinates at every future step.
+
+\subsection*{Meaning of Each Symbol}
+\[
+    \mathcal{L}_{traj}
+\]
+is the trajectory loss. This is the value the training process tries to
+minimize.
+
+\[
+    F
+\]
+is the number of future prediction steps. In this work:
+\[
+    F = 5
+\]
+
+\[
+    k
+\]
+is the future step index:
+\[
+    k = 1,2,3,4,5
+\]
+
+\[
+    i \in \{x,y\}
+\]
+means the loss is calculated for both coordinate dimensions, \(x\) and \(y\).
+
+\[
+    \hat{y}_{k,i}
+\]
+is the predicted coordinate value at future step \(k\), for coordinate \(i\).
+For example, \(\hat{y}_{3,x}\) means the predicted \(x\)-coordinate at future
+step 3.
+
+\[
+    y_{k,i}
+\]
+is the target or ground-truth coordinate value at future step \(k\), for
+coordinate \(i\).
+
+\[
+    \hat{y}_{k,i} - y_{k,i}
+\]
+is the prediction error for one coordinate at one future step.
+
+\subsection*{Why the Denominator Is \(2F\)}
+The denominator is:
+\[
+    2F
+\]
+because each future step has two coordinates, \(x\) and \(y\). Since \(F=5\),
+the loss averages over:
+\[
+    2F = 2 \times 5 = 10
+\]
+coordinate errors.
+
+\subsection*{What SmoothL1 Means}
+SmoothL1 is a loss function that behaves like squared error for small mistakes
+and like absolute error for larger mistakes. A common form is:
+\[
+\mathrm{SmoothL1}(e) =
+\begin{cases}
+    \frac{1}{2}e^2, & \text{if } |e| < 1, \\
+    |e| - \frac{1}{2}, & \text{otherwise.}
+\end{cases}
+\]
+Here, \(e\) is the prediction error:
+\[
+    e = \hat{y}_{k,i} - y_{k,i}
+\]
+
+\subsection*{Why SmoothL1 Is Used}
+SmoothL1 is useful because it is less sensitive to occasional large errors than
+ordinary mean squared error. This gives more stable training when some
+trajectory samples contain sharp turns, recovery behavior, or irregular
+controller actions. In simple words, it helps the model learn without being
+overly disturbed by a few difficult samples.
+
+\subsection*{Why the Loss Is Local}
+The loss is applied to the future ego-local path, not to intermediate controller
+states. This means the model is trained to predict where the UGV will move in
+its local coordinate frame, rather than directly predicting rule-based states
+such as \texttt{toGoal}, \texttt{avoid}, or \texttt{reverse}.
+
+\subsection*{Adam Optimizer}
+All trainable models use the Adam optimizer. Adam updates the model weights
+during training based on the loss gradient. It is commonly used because it
+adapts the learning rate for each parameter and usually provides stable training
+for neural networks.
+
+\subsection*{Short Defence Answer}
+``The models are trained by comparing the predicted five-point local trajectory
+with the target local trajectory. The SmoothL1 loss is used because it is stable
+for normal errors and less sensitive to occasional large trajectory deviations.
+Adam is then used to update the model weights and minimize this trajectory
+loss.''
+
+\end{document}

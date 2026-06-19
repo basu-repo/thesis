@@ -149,6 +149,12 @@ class UavScoutDriver(Node):
         self.report_pub = self.create_publisher(Vector3, report_topic, 10)
 
         self.create_subscription(Odometry, odom_topic, self.odom_cb, 10)
+        self.create_subscription(
+            Odometry,
+            f"/model/{self.husky_name}/odometry",
+            self.husky_odom_cb,
+            10,
+        )
         self.create_subscription(TFMessage, world_pose_topic, self.world_pose_cb, 10)
         self.create_subscription(String, obstacle_action_topic, self.obstacle_action_cb, 10)
         self.create_subscription(Vector3, obstacle_clearance_topic, self.obstacle_clearance_cb, 10)
@@ -187,6 +193,34 @@ class UavScoutDriver(Node):
 
     def odom_cb(self, msg: Odometry):
         self.uav_pose = msg.pose.pose
+        pose = msg.pose.pose
+        orientation = pose.orientation
+        self.uav_world_state = {
+            "x": float(pose.position.x),
+            "y": float(pose.position.y),
+            "z": float(pose.position.z),
+            "yaw": quaternion_to_yaw(
+                orientation.x,
+                orientation.y,
+                orientation.z,
+                orientation.w,
+            ),
+        }
+
+    def husky_odom_cb(self, msg: Odometry):
+        pose = msg.pose.pose
+        orientation = pose.orientation
+        self.husky_world_state = {
+            "x": float(pose.position.x),
+            "y": float(pose.position.y),
+            "z": float(pose.position.z),
+            "yaw": quaternion_to_yaw(
+                orientation.x,
+                orientation.y,
+                orientation.z,
+                orientation.w,
+            ),
+        }
 
     def world_pose_cb(self, msg: TFMessage):
         uav_tf = extract_model_transform(msg, self.uav_name)

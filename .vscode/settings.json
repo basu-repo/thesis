@@ -1,5 +1,13 @@
 {
-    "ROS2.distro": "humble",
+    "ROS2.distro": "jazzy",
     "github.copilot.chat.codeGeneration.useInstructionFiles": true,
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    "python.defaultInterpreterPath": "/home/basudeo/Documents/Thesis/.venv-jazzy/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.autoComplete.extraPaths": [
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ]
 }

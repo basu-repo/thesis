@@ -29,7 +29,7 @@
                 <geometry>
                     <mesh>
                         <scale>1 1 1</scale>
-                        <uri>meshes/m100.dae</uri>
+                        <uri>model://m100/meshes/m100.dae</uri>
                     </mesh>
                 </geometry>
             </visual>
@@ -39,7 +39,7 @@
                 <geometry>
                     <mesh>
                         <scale>1 1 1</scale>
-                        <uri>meshes/cree_xhp70.dae</uri>
+                        <uri>model://m100/meshes/cree_xhp70.dae</uri>
                     </mesh>
                 </geometry>
             </visual>
@@ -48,7 +48,7 @@
                 <geometry>
                     <mesh>
                         <scale>1 1 1</scale>
-                        <uri>meshes/cree_xhp70.dae</uri>
+                        <uri>model://m100/meshes/cree_xhp70.dae</uri>
                     </mesh>
                 </geometry>
             </visual>
@@ -172,9 +172,11 @@
                 <update_rate>20</update_rate>
                 <air_pressure>
                     <reference_altitude>0</reference_altitude>
-                    <noise type="gaussian">
-                        <mean>0.00000008</mean>
-                    </noise>
+                    <pressure>
+                        <noise type="gaussian">
+                            <mean>0.00000008</mean>
+                        </noise>
+                    </pressure>
                 </air_pressure>
             </sensor>
             <sensor name="magnetometer" type="magnetometer">
@@ -330,7 +332,7 @@
                 <geometry>
                     <mesh>
                         <scale>0.175 0.175 0.175</scale>
-                        <uri>meshes/m100_propeller_ccw.dae</uri>
+                        <uri>model://m100/meshes/m100_propeller_ccw.dae</uri>
                     </mesh>
                 </geometry>
                 <material>
@@ -397,7 +399,7 @@
                 <geometry>
                     <mesh>
                         <scale>0.175 0.175 0.175</scale>
-                        <uri>meshes/m100_propeller_ccw.dae</uri>
+                        <uri>model://m100/meshes/m100_propeller_ccw.dae</uri>
                     </mesh>
                 </geometry>
                 <material>
@@ -464,7 +466,7 @@
                 <geometry>
                     <mesh>
                         <scale>0.175 0.175 0.175</scale>
-                        <uri>meshes/m100_propeller_cw.dae</uri>
+                        <uri>model://m100/meshes/m100_propeller_cw.dae</uri>
                     </mesh>
                 </geometry>
                 <material>
@@ -531,7 +533,7 @@
                 <geometry>
                     <mesh>
                         <scale>0.175 0.175 0.175</scale>
-                        <uri>meshes/m100_propeller_cw.dae</uri>
+                        <uri>model://m100/meshes/m100_propeller_cw.dae</uri>
                     </mesh>
                 </geometry>
                 <material>
@@ -562,7 +564,7 @@
                 <use_parent_model_frame>1</use_parent_model_frame>
             </axis>
         </joint>
-        <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        <plugin filename="gz-sim-multicopter-motor-model-system"
                 name="gz::sim::systems::MulticopterMotorModel">
             <robotNamespace>uav1</robotNamespace>
             <jointName>rotor_0_joint</jointName>
@@ -574,14 +576,14 @@
             <motorConstant>1.2e-05</motorConstant>
             <momentConstant>0.06</momentConstant>
             <commandSubTopic>command/motor_speed</commandSubTopic>
-            <motorNumber>0</motorNumber>
+            <actuator_number>0</actuator_number>
             <rotorDragCoefficient>0.0009</rotorDragCoefficient>
             <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
             <motorSpeedPubTopic>motor_speed/0</motorSpeedPubTopic>
             <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
             <motorType>velocity</motorType>
         </plugin>
-        <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        <plugin filename="gz-sim-multicopter-motor-model-system"
                 name="gz::sim::systems::MulticopterMotorModel">
             <robotNamespace>uav1</robotNamespace>
             <jointName>rotor_1_joint</jointName>
@@ -593,14 +595,14 @@
             <motorConstant>1.2e-05</motorConstant>
             <momentConstant>0.06</momentConstant>
             <commandSubTopic>command/motor_speed</commandSubTopic>
-            <motorNumber>1</motorNumber>
+            <actuator_number>1</actuator_number>
             <rotorDragCoefficient>0.0009</rotorDragCoefficient>
             <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
             <motorSpeedPubTopic>motor_speed/1</motorSpeedPubTopic>
             <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
             <motorType>velocity</motorType>
         </plugin>
-        <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        <plugin filename="gz-sim-multicopter-motor-model-system"
                 name="gz::sim::systems::MulticopterMotorModel">
             <robotNamespace>uav1</robotNamespace>
             <jointName>rotor_2_joint</jointName>
@@ -612,14 +614,14 @@
             <motorConstant>1.2e-05</motorConstant>
             <momentConstant>0.06</momentConstant>
             <commandSubTopic>command/motor_speed</commandSubTopic>
-            <motorNumber>2</motorNumber>
+            <actuator_number>2</actuator_number>
             <rotorDragCoefficient>0.0009</rotorDragCoefficient>
             <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
             <motorSpeedPubTopic>motor_speed/2</motorSpeedPubTopic>
             <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
             <motorType>velocity</motorType>
         </plugin>
-        <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        <plugin filename="gz-sim-multicopter-motor-model-system"
                 name="gz::sim::systems::MulticopterMotorModel">
             <robotNamespace>uav1</robotNamespace>
             <jointName>rotor_3_joint</jointName>
@@ -631,14 +633,14 @@
             <motorConstant>1.2e-05</motorConstant>
             <momentConstant>0.06</momentConstant>
             <commandSubTopic>command/motor_speed</commandSubTopic>
-            <motorNumber>3</motorNumber>
+            <actuator_number>3</actuator_number>
             <rotorDragCoefficient>0.0009</rotorDragCoefficient>
             <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
             <motorSpeedPubTopic>motor_speed/3</motorSpeedPubTopic>
             <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
             <motorType>velocity</motorType>
         </plugin>
-        <plugin filename="ignition-gazebo-multicopter-control-system"
+        <plugin filename="gz-sim-multicopter-control-system"
                 name="gz::sim::systems::MulticopterVelocityControl">
             <robotNamespace>uav1</robotNamespace>
             <commandSubTopic>command/twist</commandSubTopic>
@@ -677,8 +679,8 @@
                 </rotor>
             </rotorConfiguration>
         </plugin>
-        <plugin filename="ignition-gazebo-odometry-publisher-system"
-                name="ignition::gazebo::systems::OdometryPublisher">
+        <plugin filename="gz-sim-odometry-publisher-system"
+                name="gz::sim::systems::OdometryPublisher">
             <dimensions>3</dimensions>
         </plugin>
     </model>

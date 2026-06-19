@@ -34,6 +34,8 @@ models/husky/model_blue_tag.sdf
 *.pyo
 **/__pycache__/
 .ipynb_checkpoints/
+.venv*/
+.local_pytools/
 .vscode/
 thesis_refrences/
 thesis_template_hh/

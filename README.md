@@ -112,7 +112,31 @@ For local communication-aware `model_eval` runs, the UGV receives delayed and de
 5. Source ROS 2 before launching `cooperative_sim` or `model_eval`:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
+```
+
+## Jazzy Python Environment
+
+ROS 2 Jazzy on Ubuntu 24.04 uses Python 3.12. For learned-model evaluation,
+use the local project environment `.venv-jazzy`; it is created with access to
+system site packages so it can import ROS Jazzy `rclpy`, while PyTorch and
+training/export dependencies stay local to the repository.
+
+Verified local stack:
+
+- ROS 2 Jazzy with Gazebo Harmonic
+- Gazebo Sim `8.11.0`
+- NVIDIA GTX 1660 Ti with driver `535.309.01`
+- PyTorch `2.5.1+cu121` with CUDA available
+- `rosbags` for bag export
+
+Activate and verify:
+
+```bash
+cd /home/basudeo/Documents/Thesis
+source /opt/ros/jazzy/setup.bash
+source .venv-jazzy/bin/activate
+python -c "import rclpy, torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
 ## Notes

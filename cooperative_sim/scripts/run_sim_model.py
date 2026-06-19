@@ -302,12 +302,12 @@ def load_husky_sdf_with_topic(topic_name: str) -> str:
 def add_pose_publisher(sdf_text: str) -> str:
     """Inject a Gazebo pose publisher so ROS can see world-truth Husky poses."""
 
-    if "ignition-gazebo-pose-publisher-system" in sdf_text:
+    if "gz-sim-pose-publisher-system" in sdf_text:
         return sdf_text
     plugin = """
     <plugin
-      filename="ignition-gazebo-pose-publisher-system"
-      name="ignition::gazebo::systems::PosePublisher">
+      filename="gz-sim-pose-publisher-system"
+      name="gz::sim::systems::PosePublisher">
       <publish_link_pose>true</publish_link_pose>
       <use_pose_vector_msg>true</use_pose_vector_msg>
     </plugin>
@@ -357,6 +357,18 @@ def write_husky_variant(output_path: Path, topic_name: str, marker_name: str, rg
     return output_path
 
 
+def write_uav_variant(output_path: Path, uav_name: str) -> Path:
+    """Create a Harmonic-compatible M100 variant with an entity-specific namespace."""
+
+    sdf_text = (MODELS_DIR / "m100" / "model.sdf").read_text()
+    sdf_text = sdf_text.replace(
+        "<robotNamespace>uav1</robotNamespace>",
+        f"<robotNamespace>{uav_name}</robotNamespace>",
+    )
+    output_path.write_text(sdf_text)
+    return output_path
+
+
 def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float], rgba: tuple[float, float, float, float]):
     marker_sdf = f"""<sdf version="1.7">
   <model name="{name}">
@@ -382,9 +394,9 @@ def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float
 </sdf>"""
     one_line = marker_sdf.replace("\n", " ").replace('"', '\\"')
     cmd = (
-        f"ign service -s /world/{world_name}/create "
-        f"--reqtype ignition.msgs.EntityFactory "
-        f"--reptype ignition.msgs.Boolean "
+        f"gz service -s /world/{world_name}/create "
+        f"--reqtype gz.msgs.EntityFactory "
+        f"--reptype gz.msgs.Boolean "
         f"--timeout 5000 "
         f'--req \'sdf: "{one_line}"\''
     )
@@ -394,27 +406,27 @@ def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float
 def rgbd_camera_bridge_topics(world_name: str, model_name: str, link_name: str, sensor_name: str) -> list[str]:
     prefix = f"/world/{world_name}/model/{model_name}/link/{link_name}/sensor/{sensor_name}"
     return [
-        f"{prefix}/image@sensor_msgs/msg/Image[ignition.msgs.Image",
-        f"{prefix}/depth_image@sensor_msgs/msg/Image[ignition.msgs.Image",
-        f"{prefix}/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo",
-        f"{prefix}/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
+        f"{prefix}/image@sensor_msgs/msg/Image[gz.msgs.Image",
+        f"{prefix}/depth_image@sensor_msgs/msg/Image[gz.msgs.Image",
+        f"{prefix}/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
+        f"{prefix}/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
     ]
 
 
 def camera_bridge_topics(world_name: str, model_name: str, link_name: str, sensor_name: str) -> list[str]:
     prefix = f"/world/{world_name}/model/{model_name}/link/{link_name}/sensor/{sensor_name}"
     return [
-        f"{prefix}/image@sensor_msgs/msg/Image[ignition.msgs.Image",
-        f"{prefix}/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo",
+        f"{prefix}/image@sensor_msgs/msg/Image[gz.msgs.Image",
+        f"{prefix}/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
     ]
 
 
 def husky_sensor_bridge_topics(world_name: str, model_name: str) -> list[str]:
     base_prefix = f"/world/{world_name}/model/{model_name}/link/base_link/sensor"
     topics = [
-        f"{base_prefix}/front_laser/scan/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
-        f"{base_prefix}/planar_laser/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan",
-        f"{base_prefix}/imu_sensor/imu@sensor_msgs/msg/Imu[ignition.msgs.IMU",
+        f"{base_prefix}/front_laser/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
+        f"{base_prefix}/planar_laser/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
+        f"{base_prefix}/imu_sensor/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
     ]
     topics.extend(rgbd_camera_bridge_topics(world_name, model_name, "base_link", "camera_front"))
     topics.extend(rgbd_camera_bridge_topics(world_name, model_name, "base_link", "camera_down"))
@@ -508,12 +520,11 @@ def build_bag_topics(
     return topics
 
 
-os.environ["IGN_GAZEBO_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("IGN_GAZEBO_RESOURCE_PATH", "")
 os.environ["GZ_SIM_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("GZ_SIM_RESOURCE_PATH", "")
 
 setup_terminal_tee(RUN_LOG_PATH)
 subprocess.run(["bash", "-c", "pkill -f ros_gz_bridge || true"])
-subprocess.run(["bash", "-c", "pkill -f ign || true"])
+subprocess.run(["bash", "-c", "pkill -f 'gz sim' || true"])
 subprocess.run(["bash", "-c", f"pkill -f {OMNET_BIN} || true"])
 
 log_event(f"START timestamp: {RUN_START_DT.isoformat(timespec='seconds')}")
@@ -530,9 +541,9 @@ log_event(
     f"uav2={ENABLE_SECOND_UAV}"
 )
 log_event("Starting Gazebo...")
-gazebo_cmd = f"ign gazebo --gui-config {GUI_CONFIG} {WORLD}"
+gazebo_cmd = f"gz sim -r --gui-config {GUI_CONFIG} {WORLD}"
 if ENABLE_HEADLESS:
-    gazebo_cmd = f"ign gazebo -s -r --headless-rendering {WORLD}"
+    gazebo_cmd = f"gz sim -s -r --headless-rendering {WORLD}"
 gz = run_bg(gazebo_cmd)
 time.sleep(5)
 
@@ -548,9 +559,9 @@ if ENABLE_PRIMARY_HUSKY:
         (0.95, 0.12, 0.12, 1.0),
     )
     spawn_husky = (
-        "ign service -s /world/{world_name}/create "
-        "--reqtype ignition.msgs.EntityFactory "
-        "--reptype ignition.msgs.Boolean "
+        "gz service -s /world/{world_name}/create "
+        "--reqtype gz.msgs.EntityFactory "
+        "--reptype gz.msgs.Boolean "
         "--timeout 5000 "
         "--req 'sdf_filename: \"{sdf_path}\", name: \"husky_local\", "
         "pose: {{position: {{x: {spawn_x}, y: {spawn_y}, z: {spawn_z}}}, "
@@ -576,9 +587,9 @@ if ENABLE_SECOND_HUSKY:
         (0.12, 0.36, 0.95, 1.0),
     )
     spawn_husky2 = (
-        f"ign service -s /world/{WORLD_NAME}/create "
-        f"--reqtype ignition.msgs.EntityFactory "
-        f"--reptype ignition.msgs.Boolean "
+        f"gz service -s /world/{WORLD_NAME}/create "
+        f"--reqtype gz.msgs.EntityFactory "
+        f"--reptype gz.msgs.Boolean "
         f"--timeout 5000 "
         f'--req \'sdf_filename: "{husky2_sdf_path}", name: "husky_2", '
         f'pose: {{position: {{x: {HUSKY2_X}, y: {HUSKY2_Y}, z: {HUSKY2_Z}}}, '
@@ -589,15 +600,17 @@ if ENABLE_SECOND_HUSKY:
 
 if ENABLE_UAV:
     log_event("Spawning UAV...")
+    uav1_sdf_path = write_uav_variant(Path("/tmp/m100_uav1.sdf"), "uav1")
     spawn_uav = """
-ign service -s /world/{world_name}/create \
---reqtype ignition.msgs.EntityFactory \
---reptype ignition.msgs.Boolean \
---timeout 5000 \
---req 'sdf_filename: "model://m100/model.sdf", name: "uav1",
+gz service -s /world/{world_name}/create \
+--reqtype gz.msgs.EntityFactory \
+--reptype gz.msgs.Boolean \
+--timeout 30000 \
+--req 'sdf_filename: "{sdf_path}", name: "uav1",
 pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav_qz}, w: {uav_qw}}}}}'
 """.format(
         world_name=WORLD_NAME,
+        sdf_path=uav1_sdf_path,
         uav_x=UAV_X,
         uav_y=UAV_Y,
         uav_z=UAV_Z,
@@ -609,15 +622,17 @@ pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav
 
 if ENABLE_SECOND_UAV:
     log_event("Spawning UAV 2...")
+    uav2_sdf_path = write_uav_variant(Path("/tmp/m100_uav2.sdf"), "uav2")
     spawn_uav2 = """
-ign service -s /world/{world_name}/create \
---reqtype ignition.msgs.EntityFactory \
---reptype ignition.msgs.Boolean \
---timeout 5000 \
---req 'sdf_filename: "model://m100/model.sdf", name: "uav2",
+gz service -s /world/{world_name}/create \
+--reqtype gz.msgs.EntityFactory \
+--reptype gz.msgs.Boolean \
+--timeout 30000 \
+--req 'sdf_filename: "{sdf_path}", name: "uav2",
 pose: {{position: {{x: {uav_x}, y: {uav_y}, z: {uav_z}}}, orientation: {{z: {uav_qz}, w: {uav_qw}}}}}'
 """.format(
         world_name=WORLD_NAME,
+        sdf_path=uav2_sdf_path,
         uav_x=UAV2_X,
         uav_y=UAV2_Y,
         uav_z=UAV2_Z,
@@ -647,16 +662,16 @@ bridge_topics = [
 if ENABLE_PRIMARY_HUSKY:
     bridge_topics.extend(
         [
-            "/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-            "/model/husky_local/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+            "/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist",
+            "/model/husky_local/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
         ]
     )
     bridge_topics.extend(husky_sensor_bridge_topics(WORLD_NAME, "husky_local"))
 if ENABLE_SECOND_HUSKY:
     bridge_topics.extend(
         [
-            "/cmd_vel_husky2@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-            "/model/husky_2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+            "/cmd_vel_husky2@geometry_msgs/msg/Twist@gz.msgs.Twist",
+            "/model/husky_2/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
             f"/world/{WORLD_NAME}/dynamic_pose/info@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
         ]
     )
@@ -664,40 +679,47 @@ if ENABLE_SECOND_HUSKY:
 if ENABLE_UAV:
     bridge_topics.extend(
         [
-            "/uav1/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-            "/uav1/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-            "/model/uav1/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-            "/model/uav1/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-            "/model/uav1/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
-            f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
-            f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[ignition.msgs.IMU",
-            f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/air_pressure/air_pressure@sensor_msgs/msg/FluidPressure[ignition.msgs.FluidPressure",
-            f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/magnetometer/magnetometer@sensor_msgs/msg/MagneticField[ignition.msgs.Magnetometer",
+            "/uav1/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+            "/uav1/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+            "/model/uav1/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+            "/model/uav1/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+            "/model/uav1/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+            f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
+            f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
+            f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/air_pressure/air_pressure@sensor_msgs/msg/FluidPressure[gz.msgs.FluidPressure",
+            f"/world/{WORLD_NAME}/model/uav1/link/base_link/sensor/magnetometer/magnetometer@sensor_msgs/msg/MagneticField[gz.msgs.Magnetometer",
         ]
     )
     bridge_topics.extend(camera_bridge_topics(WORLD_NAME, "uav1", "base_link", "camera_front"))
 if ENABLE_SECOND_UAV:
     bridge_topics.extend(
         [
-            "/uav2/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-            "/uav2/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-            "/model/uav2/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-            "/model/uav2/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-            "/model/uav2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
-            f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
-            f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[ignition.msgs.IMU",
-            f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/air_pressure/air_pressure@sensor_msgs/msg/FluidPressure[ignition.msgs.FluidPressure",
-            f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/magnetometer/magnetometer@sensor_msgs/msg/MagneticField[ignition.msgs.Magnetometer",
+            "/uav2/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+            "/uav2/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+            "/model/uav2/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+            "/model/uav2/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+            "/model/uav2/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+            f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
+            f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
+            f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/air_pressure/air_pressure@sensor_msgs/msg/FluidPressure[gz.msgs.FluidPressure",
+            f"/world/{WORLD_NAME}/model/uav2/link/base_link/sensor/magnetometer/magnetometer@sensor_msgs/msg/MagneticField[gz.msgs.Magnetometer",
         ]
     )
     bridge_topics.extend(camera_bridge_topics(WORLD_NAME, "uav2", "base_link", "camera_front"))
 bridge_cmd = (
-    "source /opt/ros/humble/setup.bash && "
+    "source /opt/ros/jazzy/setup.bash && "
     "ros2 run ros_gz_bridge parameter_bridge "
     + " ".join(bridge_topics)
 )
 bridge = run_bg(bridge_cmd)
 time.sleep(2)
+
+log_event("Starting static RViz frame publisher for base_link...")
+static_tf = run_bg(
+    "source /opt/ros/jazzy/setup.bash && "
+    "ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map base_link"
+)
+time.sleep(1)
 
 rviz = None
 camera_view = None
@@ -705,7 +727,7 @@ camera_view = None
 if ENABLE_RVIZ:
     log_event(f"Starting RViz with config: {RVIZ_CONFIG_PATH}")
     rviz_cmd = (
-        "source /opt/ros/humble/setup.bash && "
+        "source /opt/ros/jazzy/setup.bash && "
         f"rviz2 -d {RVIZ_CONFIG_PATH}"
     )
     rviz = run_bg(rviz_cmd)
@@ -738,7 +760,7 @@ if DEBUG_ISOLATE_HUSKY_LOCAL:
 log_event("==============================")
 log_event("MODEL MODE ENABLED")
 log_event("==============================")
-log_event("Press Play in Gazebo")
+log_event("Gazebo simulation is running automatically.")
 log_event("Press Ctrl+C here when done.")
 
 if ENABLE_BAG_RECORDING:
@@ -748,24 +770,34 @@ if ENABLE_BAG_RECORDING:
         + ", ".join(bag_topics)
     )
     record_cmd = (
-        "source /opt/ros/humble/setup.bash && "
+        "source /opt/ros/jazzy/setup.bash && "
         f"ros2 bag record -o {bag_path} "
         + " ".join(bag_topics)
     )
     recorder = run_bg(record_cmd)
 
 rclpy.init()
-# Drive from Gazebo world pose so the controller and the visible goal marker use
-# one consistent coordinate frame.
-HUSKY1_GOAL = offset_goal_along_path(
+# Gazebo Harmonic's Pose_V-to-TF bridge does not preserve entity frame names,
+# so the Husky controller uses its reliable spawn-relative odometry frame.
+HUSKY1_WORLD_CONTROL_GOAL = offset_goal_along_path(
     WORLD_HUSKY1_GOAL,
     (SPAWN_X, SPAWN_Y, SPAWN_Z),
     GOAL_STOP_OFFSET,
 )
-HUSKY2_GOAL = offset_goal_along_path(
+HUSKY2_WORLD_CONTROL_GOAL = offset_goal_along_path(
     WORLD_HUSKY2_GOAL,
     (HUSKY2_X, HUSKY2_Y, HUSKY2_Z),
     GOAL_STOP_OFFSET,
+)
+HUSKY1_GOAL = world_to_local_goal(
+    HUSKY1_WORLD_CONTROL_GOAL,
+    (SPAWN_X, SPAWN_Y, SPAWN_Z),
+    HUSKY1_SPAWN_YAW,
+)
+HUSKY2_GOAL = world_to_local_goal(
+    HUSKY2_WORLD_CONTROL_GOAL,
+    (HUSKY2_X, HUSKY2_Y, HUSKY2_Z),
+    HUSKY2_SPAWN_YAW,
 )
 UAV_GOAL = offset_goal_along_path(
     WORLD_UAV_GOAL,
@@ -786,7 +818,7 @@ if ENABLE_UAV:
     goal_parts.append(f"uav=({UAV_GOAL[0]:.3f}, {UAV_GOAL[1]:.3f})")
 if ENABLE_SECOND_UAV:
     goal_parts.append(f"uav2=({UAV2_GOAL[0]:.3f}, {UAV2_GOAL[1]:.3f})")
-log_event("Controller goals (world frame, stop offset applied): " + ", ".join(goal_parts))
+log_event("Controller goals (spawn-relative odometry frame): " + ", ".join(goal_parts))
 if ENABLE_UAV or ENABLE_SECOND_UAV:
     log_event(
         f"Scout altitude target: z={UAV_SCOUT_ALTITUDE_Z:.2f}, "
@@ -858,7 +890,7 @@ if ENABLE_PRIMARY_HUSKY:
         terrain_profile_topic=husky1_terrain_profile_topic,
         state_topic=husky1_controller_state_topic,
         goal_xyz=HUSKY1_GOAL,
-        world_goal_xyz=HUSKY1_GOAL,
+        world_goal_xyz=HUSKY1_WORLD_CONTROL_GOAL,
         bootstrap_seconds=BOOTSTRAP_SECONDS,
         bootstrap_linear_speed=BOOTSTRAP_LINEAR_SPEED,
         control_period=CONTROL_PERIOD,
@@ -922,7 +954,7 @@ if ENABLE_SECOND_HUSKY:
         use_depth_classification=ENABLE_DEPTH_IMAGE_CLASSIFICATION,
         use_hazard_map=ENABLE_HAZARD_MAP,
         goal_xyz=HUSKY2_GOAL,
-        world_goal_xyz=HUSKY2_GOAL,
+        world_goal_xyz=HUSKY2_WORLD_CONTROL_GOAL,
         bootstrap_seconds=BOOTSTRAP_SECONDS,
         bootstrap_linear_speed=BOOTSTRAP_LINEAR_SPEED,
         control_period=CONTROL_PERIOD,
@@ -1127,18 +1159,24 @@ if ENABLE_CAMERA_VIEW:
     time.sleep(3)
     log_event("Starting camera viewer...")
     camera_cmd = (
-        "source /opt/ros/humble/setup.bash && "
+        "source /opt/ros/jazzy/setup.bash && "
         "ros2 run rqt_image_view rqt_image_view"
     )
     camera_view = run_bg(camera_cmd)
     time.sleep(2)
 
-resource_monitor.set_tracked_processes([gz, bridge, rviz, camera_view, omnet, recorder])
+resource_monitor.set_tracked_processes([gz, bridge, static_tf, rviz, camera_view, omnet, recorder])
 
 try:
     executor.spin()
 except KeyboardInterrupt:
     log_event("Stopping model run...")
+except Exception as exc:
+    shutdown_text = str(exc)
+    if "context is not valid" in shutdown_text or "rcl_shutdown" in shutdown_text:
+        log_event("ROS executor stopped after shutdown.")
+    else:
+        raise
 finally:
     managed_nodes = [episode_metadata, resource_monitor]
     if obstacle_detector is not None:
@@ -1184,7 +1222,7 @@ finally:
     log_event(f"Resource summary file: {resource_summary_path}")
     log_event(f"Resource samples file: {resource_samples_path}")
     log_event("Stopping bridge, OMNeT++, and Gazebo...")
-    managed_processes = [bridge, rviz, camera_view, omnet, gz]
+    managed_processes = [bridge, static_tf, rviz, camera_view, omnet, gz]
     for proc in managed_processes:
         if proc is None:
             continue

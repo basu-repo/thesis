@@ -189,9 +189,9 @@ def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float
 </sdf>"""
     one_line = marker_sdf.replace("\n", " ").replace('"', '\\"')
     cmd = (
-        f"ign service -s /world/{world_name}/create "
-        f"--reqtype ignition.msgs.EntityFactory "
-        f"--reptype ignition.msgs.Boolean "
+        f"gz service -s /world/{world_name}/create "
+        f"--reqtype gz.msgs.EntityFactory "
+        f"--reptype gz.msgs.Boolean "
         f"--timeout 5000 "
         f'--req \'sdf: "{one_line}"\''
     )
@@ -204,7 +204,7 @@ def main() -> int:
     run_start = datetime.datetime.now()
     log_path = LOG_DIR / f"trajectory_model_live_{run_start.strftime('%Y%m%d_%H%M%S')}.log"
 
-    os.environ["IGN_GAZEBO_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("IGN_GAZEBO_RESOURCE_PATH", "")
+    os.environ["GZ_SIM_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("GZ_SIM_RESOURCE_PATH", "")
     os.environ["GZ_SIM_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("GZ_SIM_RESOURCE_PATH", "")
 
     setup_terminal_tee(log_path)
@@ -213,9 +213,9 @@ def main() -> int:
     log_event(f"Model slug: {model_slug}")
     log_event(f"Checkpoint: {checkpoint_path}")
 
-    gazebo_cmd = f"ign gazebo --gui-config {GUI_CONFIG} {WORLD}"
+    gazebo_cmd = f"gz sim --gui-config {GUI_CONFIG} {WORLD}"
     if args.headless:
-        gazebo_cmd = f"ign gazebo -s -r --headless-rendering {WORLD}"
+        gazebo_cmd = f"gz sim -s -r --headless-rendering {WORLD}"
     gz = run_bg(gazebo_cmd)
     time.sleep(5)
 
@@ -224,9 +224,9 @@ def main() -> int:
 
     husky_sdf_path = write_husky_variant(MODELS_DIR / "husky" / "model_blue_tag.sdf", "/cmd_vel_husky2")
     spawn_husky = (
-        f"ign service -s /world/{WORLD_NAME}/create "
-        f"--reqtype ignition.msgs.EntityFactory "
-        f"--reptype ignition.msgs.Boolean "
+        f"gz service -s /world/{WORLD_NAME}/create "
+        f"--reqtype gz.msgs.EntityFactory "
+        f"--reptype gz.msgs.Boolean "
         f"--timeout 5000 "
         f'--req \'sdf_filename: "{husky_sdf_path}", name: "husky_2", '
         f'pose: {{position: {{x: {HUSKY2_X}, y: {HUSKY2_Y}, z: {HUSKY2_Z}}}}}\''
@@ -238,9 +238,9 @@ def main() -> int:
     for name, x, y, z in (("uav1", UAV1_X, UAV1_Y, UAV1_Z), ("uav2", UAV2_X, UAV2_Y, UAV2_Z)):
         log_event(f"Spawning {name}...")
         spawn_uav = (
-            f"ign service -s /world/{WORLD_NAME}/create "
-            f"--reqtype ignition.msgs.EntityFactory "
-            f"--reptype ignition.msgs.Boolean "
+            f"gz service -s /world/{WORLD_NAME}/create "
+            f"--reqtype gz.msgs.EntityFactory "
+            f"--reptype gz.msgs.Boolean "
             f"--timeout 5000 "
             f'--req \'sdf_filename: "model://m100/model.sdf", name: "{name}", '
             f'pose: {{position: {{x: {x}, y: {y}, z: {z}}}}}\''
@@ -254,29 +254,29 @@ def main() -> int:
     log_event("Starting bridge...")
     bridge_topics = [
         f"/world/{WORLD_NAME}/dynamic_pose/info@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
-        "/cmd_vel_husky2@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/model/husky_2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
-        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan",
-        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
-        "/uav1/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/uav1/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-        "/model/uav1/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/model/uav1/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-        "/model/uav1/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
-        "/uav2/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/uav2/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-        "/model/uav2/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/model/uav2/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-        "/model/uav2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+        "/cmd_vel_husky2@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/model/husky_2/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
+        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
+        "/uav1/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/uav1/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+        "/model/uav1/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/model/uav1/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+        "/model/uav1/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+        "/uav2/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/uav2/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+        "/model/uav2/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/model/uav2/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+        "/model/uav2/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
     ]
-    bridge_cmd = "source /opt/ros/humble/setup.bash && ros2 run ros_gz_bridge parameter_bridge " + " ".join(bridge_topics)
+    bridge_cmd = "source /opt/ros/jazzy/setup.bash && ros2 run ros_gz_bridge parameter_bridge " + " ".join(bridge_topics)
     bridge = run_bg(bridge_cmd)
     time.sleep(2)
 
     rviz = None
     if not args.no_rviz:
         log_event(f"Starting RViz with config: {RVIZ_CONFIG_PATH}")
-        rviz = run_bg(f"source /opt/ros/humble/setup.bash && rviz2 -d {RVIZ_CONFIG_PATH}")
+        rviz = run_bg(f"source /opt/ros/jazzy/setup.bash && rviz2 -d {RVIZ_CONFIG_PATH}")
 
     rclpy.init(args=None)
     executor = MultiThreadedExecutor()

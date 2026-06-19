@@ -123,8 +123,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="best", help="Model slug to test, or 'best'.")
     parser.add_argument("--checkpoint", default=None, help="Explicit path to .pt weight file.")
     parser.add_argument("--headless", action="store_true", help="Run Gazebo server-only.")
-    parser.add_argument("--no-rviz", action="store_true", help="Skip RViz.")
-    parser.add_argument("--no-camera", action="store_true", help="Skip the image viewer.")
+    parser.add_argument("--rviz", action="store_true", help="Start RViz for visualization.")
+    parser.add_argument("--camera", action="store_true", help="Start the image viewer.")
     parser.add_argument("--autorun", action="store_true", help="Automatically unpause Gazebo after node setup.")
     parser.add_argument("--target-index", type=int, default=4, help="Future waypoint index to follow.")
     parser.add_argument("--enable-omnet", action="store_true", help="Enable external OMNeT communication co-simulation.")
@@ -302,9 +302,9 @@ def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float
 </sdf>"""
     one_line = marker_sdf.replace("\n", " ").replace('"', '\\"')
     cmd = (
-        f"ign service -s /world/{world_name}/create "
-        f"--reqtype ignition.msgs.EntityFactory "
-        f"--reptype ignition.msgs.Boolean "
+        f"gz service -s /world/{world_name}/create "
+        f"--reqtype gz.msgs.EntityFactory "
+        f"--reptype gz.msgs.Boolean "
         f"--timeout 5000 "
         f'--req \'sdf: "{one_line}"\''
     )
@@ -313,9 +313,9 @@ def spawn_goal_marker(world_name: str, name: str, xyz: tuple[float, float, float
 
 def set_world_running(world_name: str, *, retries: int = 5, delay_seconds: float = 1.0) -> bool:
     cmd = (
-        f"ign service -s /world/{world_name}/control "
-        f"--reqtype ignition.msgs.WorldControl "
-        f"--reptype ignition.msgs.Boolean "
+        f"gz service -s /world/{world_name}/control "
+        f"--reqtype gz.msgs.WorldControl "
+        f"--reptype gz.msgs.Boolean "
         f"--timeout 5000 "
         f"--req 'pause: false'"
     )
@@ -333,7 +333,7 @@ def main() -> int:
     run_start_dt = datetime.datetime.now()
     run_log_path = LOG_DIR / f"trajectory_model_eval_09_{run_start_dt.strftime('%Y%m%d_%H%M%S')}.log"
 
-    os.environ["IGN_GAZEBO_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("IGN_GAZEBO_RESOURCE_PATH", "")
+    os.environ["GZ_SIM_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("GZ_SIM_RESOURCE_PATH", "")
     os.environ["GZ_SIM_RESOURCE_PATH"] = MODEL_PATH + ":" + os.environ.get("GZ_SIM_RESOURCE_PATH", "")
 
     setup_terminal_tee(run_log_path)
@@ -347,9 +347,9 @@ def main() -> int:
     if args.enable_omnet:
         log_event(f"OMNeT config: {args.omnet_config}")
 
-    gazebo_cmd = f"ign gazebo --gui-config {GUI_CONFIG_PATH} {WORLD}"
+    gazebo_cmd = f"gz sim --gui-config {GUI_CONFIG_PATH} {WORLD}"
     if args.headless:
-        gazebo_cmd = f"ign gazebo -s -r --headless-rendering {WORLD}"
+        gazebo_cmd = f"gz sim -s -r --headless-rendering {WORLD}"
     log_event("Starting Gazebo...")
     gz = run_bg(gazebo_cmd)
     time.sleep(5)
@@ -359,9 +359,9 @@ def main() -> int:
 
     husky_sdf_path = write_husky_variant(MODELS_DIR / "husky" / "model_09_eval.sdf", "/cmd_vel_husky2")
     spawn_husky = (
-        f"ign service -s /world/{WORLD_NAME}/create "
-        f"--reqtype ignition.msgs.EntityFactory "
-        f"--reptype ignition.msgs.Boolean "
+        f"gz service -s /world/{WORLD_NAME}/create "
+        f"--reqtype gz.msgs.EntityFactory "
+        f"--reptype gz.msgs.Boolean "
         f"--timeout 5000 "
         f'--req \'sdf_filename: "{husky_sdf_path}", name: "husky_2", '
         f'pose: {{position: {{x: {HUSKY2_X}, y: {HUSKY2_Y}, z: {HUSKY2_Z}}}, '
@@ -377,9 +377,9 @@ def main() -> int:
     ):
         log_event(f"Spawning {name}...")
         spawn_uav = (
-            f"ign service -s /world/{WORLD_NAME}/create "
-            f"--reqtype ignition.msgs.EntityFactory "
-            f"--reptype ignition.msgs.Boolean "
+            f"gz service -s /world/{WORLD_NAME}/create "
+            f"--reqtype gz.msgs.EntityFactory "
+            f"--reptype gz.msgs.Boolean "
             f"--timeout 5000 "
             f'--req \'sdf_filename: "model://m100/model.sdf", name: "{name}", '
             f'pose: {{position: {{x: {x}, y: {y}, z: {z}}}, '
@@ -395,23 +395,23 @@ def main() -> int:
     bridge_topics = [
         f"/world/{WORLD_NAME}/dynamic_pose/info@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
         "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
-        "/cmd_vel_husky2@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/model/husky_2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
-        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan",
-        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
-        "/uav1/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/uav1/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-        "/model/uav1/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/model/uav1/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-        "/model/uav1/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
-        "/uav2/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/uav2/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-        "/model/uav2/command/twist@geometry_msgs/msg/Twist@ignition.msgs.Twist",
-        "/model/uav2/enable@std_msgs/msg/Bool@ignition.msgs.Boolean",
-        "/model/uav2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+        "/cmd_vel_husky2@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/model/husky_2/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/planar_laser/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
+        f"/world/{WORLD_NAME}/model/husky_2/link/base_link/sensor/front_laser/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
+        "/uav1/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/uav1/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+        "/model/uav1/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/model/uav1/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+        "/model/uav1/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+        "/uav2/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/uav2/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+        "/model/uav2/command/twist@geometry_msgs/msg/Twist@gz.msgs.Twist",
+        "/model/uav2/enable@std_msgs/msg/Bool@gz.msgs.Boolean",
+        "/model/uav2/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
     ]
     bridge = run_bg(
-        "source /opt/ros/humble/setup.bash && "
+        "source /opt/ros/jazzy/setup.bash && "
         "ros2 run ros_gz_bridge parameter_bridge " + " ".join(bridge_topics)
     )
     time.sleep(4)
@@ -430,15 +430,15 @@ def main() -> int:
         )
 
     rviz = None
-    if not args.no_rviz:
+    if args.rviz:
         log_event(f"Starting RViz with config: {RVIZ_CONFIG_PATH}")
-        rviz = run_bg(f"source /opt/ros/humble/setup.bash && rviz2 -d {RVIZ_CONFIG_PATH}")
+        rviz = run_bg(f"source /opt/ros/jazzy/setup.bash && rviz2 -d {RVIZ_CONFIG_PATH}")
         time.sleep(2)
 
     camera_view = None
-    if not args.no_camera:
+    if args.camera:
         log_event("Starting camera viewer...")
-        camera_view = run_bg("source /opt/ros/humble/setup.bash && ros2 run rqt_image_view rqt_image_view")
+        camera_view = run_bg("source /opt/ros/jazzy/setup.bash && ros2 run rqt_image_view rqt_image_view")
         time.sleep(2)
 
     log_event("Bag recording disabled for this run.")
@@ -549,7 +549,7 @@ def main() -> int:
         target_index=args.target_index,
         goal_tolerance=1.5,
         max_linear_speed=0.80,
-        max_angular_speed=0.30,
+        max_angular_speed=0.22,
         goal_blend=0.15,
         heading_deadband=0.14,
         angular_smoothing=0.75,
